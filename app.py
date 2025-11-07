@@ -4,7 +4,7 @@
 # and a single-page Tailwind-style UI frontend served from the same app.
 #
 # CSV schema (./data/vocab.csv):
-# id,set,word,definition,example
+# id,set,word,definition
 # Example rows:
 # 1,Animals,giraffe,An African mammal with a very long neck,"The giraffe ate leaves from the tall tree."
 # 2,School,homework,Work assigned to students to do at home,"I finished my homework before dinner."
@@ -19,7 +19,6 @@ import csv
 import os
 import random
 import threading
-import uuid
 import argparse
 from dataclasses import dataclass, asdict
 from typing import List, Dict
@@ -43,7 +42,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 if not os.path.exists(CSV_PATH):
     with open(CSV_PATH, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(['id', 'set', 'word', 'definition', 'example'])
+        writer.writerow(['id', 'set', 'word', 'definition'])
 
 @dataclass
 class Vocab:
@@ -51,7 +50,6 @@ class Vocab:
     set: str
     word: str
     definition: str
-    example: str
 
 
 def read_csv() -> List[Vocab]:
@@ -64,19 +62,48 @@ def read_csv() -> List[Vocab]:
                     id=r['id'],
                     set=r.get('set', ''),
                     word=r.get('word', ''),
-                    definition=r.get('definition', ''),
-                    example=r.get('example', ''),
+                    definition=r.get('definition', '') or r.get('definition ') or '',
                 ))
         return rows
+
+
+def _csv_ensure_quotes(value: str, force_quotes: bool = False) -> str:
+    """
+    Escape CSV field and wrap in double quotes when needed.
+    When force_quotes is True, always wrap (used for definition column).
+    """
+    text = (value or '').replace('"', '""')
+    if force_quotes or any(ch in text for ch in (',', '"', '\n')):
+        return f'"{text}"'
+    return text
 
 
 def write_csv(rows: List[Vocab]):
     with LOCK:
         with open(CSV_PATH, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['id', 'set', 'word', 'definition', 'example'])
-            writer.writeheader()
+            f.write('id,set,word,definition\n')
             for r in rows:
-                writer.writerow(asdict(r))
+                fields = [
+                    _csv_ensure_quotes(r.id),
+                    _csv_ensure_quotes(r.set),
+                    _csv_ensure_quotes(r.word),
+                    _csv_ensure_quotes(r.definition, force_quotes=True),
+                ]
+                f.write(','.join(fields) + '\n')
+
+
+def next_numeric_id(rows: List[Vocab]) -> str:
+    """
+    Returns the next integer ID (as a string) based on existing rows.
+    Non-numeric IDs are ignored.
+    """
+    max_id = 0
+    for row in rows:
+        try:
+            max_id = max(max_id, int(row.id))
+        except (TypeError, ValueError):
+            continue
+    return str(max_id + 1 if max_id >= 0 else 1)
 
 
 @app.route('/')
@@ -196,23 +223,11 @@ def index():
 
   <template id=\"tpl-learn-card\">
     <div class=\"p-5 rounded-2xl border bg-white shadow-sm\">
-      <div class=\"flex items-center justify-between\">
-        <div class=\"text-xs font-semibold tracking-wide uppercase text-gray-500\"></div>
-        <button class=\"say btn btn-ghost\">🔊 Say it</button>
-      </div>
-      <h3 class=\"mt-1 text-2xl font-black\"></h3>
+      <h3 class=\"text-2xl font-black flex items-center gap-3\">
+        <span class=\"word\"></span>
+        <button class=\"say\" title=\"Play pronunciation\">🔊</button>
+      </h3>
       <div class=\"mt-3 text-gray-700\"><span class=\"font-semibold\">Definition:</span> <span class=\"def\"></span></div>
-      <div class=\"mt-2 text-gray-700\"><span class=\"font-semibold\">Example:</span> <span class=\"ex\"></span></div>
-      <div class=\"mt-4 grid md:grid-cols-2 gap-3\">
-        <div>
-          <label class=\"block text-sm font-semibold text-gray-700\">Spell it</label>
-          <input class=\"spell w-full mt-1 p-3 rounded-xl border border-gray-300\" placeholder=\"Type spelling here\" />
-          <div class=\"feedback text-sm mt-1\"></div>
-        </div>
-        <div class=\"flex items-end\">
-          <button class=\"check btn btn-primary w-full\">Check</button>
-        </div>
-      </div>
     </div>
   </template>
 
@@ -221,11 +236,10 @@ def index():
       <td class=\"p-2\"><input class=\"inp-set w-36 p-2 rounded border\"></td>
       <td class=\"p-2\"><input class=\"inp-word w-44 p-2 rounded border\"></td>
       <td class=\"p-2\"><input class=\"inp-def w-96 p-2 rounded border\"></td>
-      <td class=\"p-2\"><input class=\"inp-ex w-[36rem] p-2 rounded border\"></td>
       <td class=\"p-2\">
         <div class=\"flex gap-2\">
-          <button class=\"save btn btn-primary\">Save</button>
-          <button class=\"del btn btn-ghost\">Delete</button>
+          <button type=\"button\" class=\"save btn btn-primary\">Save</button>
+          <button type=\"button\" class=\"del btn btn-ghost\">Delete</button>
         </div>
       </td>
     </tr>
@@ -244,24 +258,56 @@ def index():
     };
 
     // Speech: use Web Speech API
+    let voices = [];
+    function refreshVoices() {
+      voices = speechSynthesis.getVoices();
+      if (!voices.length) {
+        speechSynthesis.onvoiceschanged = refreshVoices;
+      }
+    }
+    refreshVoices();
+
+    function pickSoftVoice() {
+      if (!voices.length) return null;
+      const preferred = ['Samantha','Victoria','Karen','Fiona','Ava','Serena','Zira','Allison'];
+      for (const name of preferred) {
+        const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+        if (match) return match;
+      }
+      const gentle = voices.find(v => /female|woman|soft/i.test(v.name));
+      return gentle || voices[0];
+    }
+
     function speak(text) {
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95; u.pitch = 1.0; u.lang = navigator.language || 'en-US';
+      u.rate = 0.9; u.pitch = 1.05; u.lang = navigator.language || 'en-US';
+      const voice = pickSoftVoice();
+      if (voice) u.voice = voice;
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     }
 
     let all = [];
+    let manageBody = null;
 
     function distinctSets(words) {
       const s = new Set(words.map(w => w.set).filter(Boolean));
       return ['All', ...Array.from(s)];
     }
 
-    function populateSets() {
-      const sets = distinctSets(all);
-      const fill = (sel) => { const el=$(sel); el.innerHTML = sets.map(x=>`<option value=\"${x}\">${x}</option>`).join(''); };
-      fill('#learn-set'); fill('#test-set'); fill('#manage-filter-set');
+    function populateSets(words = all, prev = {}) {
+      const sets = distinctSets(words);
+      const defaultValue = sets.includes('All') ? 'All' : (sets[0] || '');
+      const fill = (sel, saved) => {
+        const el = $(sel);
+        if (!el) return;
+        el.innerHTML = sets.map(x=>`<option value=\"${x}\">${x}</option>`).join('');
+        const target = (saved && sets.includes(saved)) ? saved : defaultValue;
+        if (target) { el.value = target; }
+      };
+      fill('#learn-set', prev.learn);
+      fill('#test-set', prev.test);
+      fill('#manage-filter-set', prev.manage);
     }
 
     function cardsFor(words) {
@@ -269,29 +315,114 @@ def index():
       const tpl = $('#tpl-learn-card');
       words.forEach(w => {
         const node = tpl.content.cloneNode(true);
-        $('.text-xs', node).textContent = w.set || '—';
-        $('h3', node).textContent = w.word;
+        $('.word', node).textContent = w.word;
         $('.def', node).textContent = w.definition;
-        $('.ex', node).textContent = w.example;
         $('.say', node).addEventListener('click', ()=> speak(w.word));
-        $('.check', node).addEventListener('click', (e)=>{
-          const card = e.target.closest('div');
-          const inp = $('.spell', card);
-          const fb = $('.feedback', card);
-          const ok = (inp.value || '').trim().toLowerCase() === (w.word||'').trim().toLowerCase();
-          fb.textContent = ok ? '✅ Correct!' : `❌ Try again — the correct spelling is \"${w.word}\"`;
-          fb.className = 'feedback text-sm mt-1 ' + (ok ? 'text-green-600' : 'text-rose-600');
-        });
         host.appendChild(node);
       });
     }
 
-    function filterBySet(setName) {
-      if (!setName || setName==='All') return all;
-      return all.filter(w => (w.set||'') === setName);
+    function filterBySet(setName, words = all) {
+      if (!setName || setName==='All') return words;
+      return words.filter(w => (w.set||'') === setName);
     }
 
-    # Manage table
+    function captureSelectValues() {
+      const learnSel = $('#learn-set');
+      const testSel = $('#test-set');
+      const manageSel = $('#manage-filter-set');
+      const pick = (el) => (el && el.value) ? el.value : 'All';
+      return {
+        learn: pick(learnSel),
+        test: pick(testSel),
+        manage: pick(manageSel),
+      };
+    }
+
+    function createManageRow(word, {isNew=false}={}) {
+      const tpl = $('#tpl-manage-row');
+      if (!tpl) return document.createElement('tr');
+      const fragment = tpl.content.cloneNode(true);
+      const row = fragment.querySelector('tr');
+      if (!row) return document.createElement('tr');
+      row.dataset.mode = isNew ? 'new' : 'existing';
+
+      const setInput = row.querySelector('.inp-set');
+      const wordInput = row.querySelector('.inp-word');
+      const defInput = row.querySelector('.inp-def');
+      const saveBtn = row.querySelector('.save');
+      const delBtn = row.querySelector('.del');
+      if (!setInput || !wordInput || !defInput || !saveBtn || !delBtn) {
+        return row;
+      }
+
+      const idValue = word.id || '';
+
+      setInput.value = word.set || '';
+      wordInput.value = word.word || '';
+      defInput.value = word.definition || '';
+
+      saveBtn.textContent = isNew ? 'Add' : 'Save';
+      delBtn.textContent = isNew ? 'Cancel' : 'Delete';
+
+      saveBtn.addEventListener('click', async (evt)=>{
+        evt.preventDefault();
+        const payload = {
+          id: idValue,
+          set: setInput.value.trim(),
+          word: wordInput.value.trim(),
+          definition: defInput.value.trim(),
+        };
+        if (isNew && (!payload.set || !payload.word || !payload.definition)) {
+          alert('Please fill in Set, Word, and Definition before saving.');
+          (setInput.value ? (wordInput.value ? defInput : wordInput) : setInput).focus();
+          return;
+        }
+        const currentManage = $('#manage-filter-set') ? $('#manage-filter-set').value : 'All';
+        saveBtn.disabled = true;
+        saveBtn.textContent = isNew ? 'Saving...' : 'Saving...';
+        try {
+          const res = await api.upsert(payload);
+          if (!res || res.ok !== true) {
+            throw new Error('Save failed');
+          }
+          const targetSet = payload.set || currentManage;
+          await refreshAll({ manageSet: targetSet });
+        } catch (err) {
+          console.error('Failed to save word', err);
+          alert('Could not save the word. Please try again.');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = isNew ? 'Add' : 'Save';
+        }
+      });
+
+      if (isNew) {
+        delBtn.addEventListener('click', (evt)=>{
+          evt.preventDefault();
+          row.remove();
+        });
+      } else {
+        delBtn.addEventListener('click', async (evt)=>{
+          evt.preventDefault();
+          if (!confirm(`Delete word \"${word.word}\"?`)) return;
+          delBtn.disabled = true;
+          try {
+            await api.remove(idValue);
+            await refreshAll({ manageSet: $('#manage-filter-set') ? $('#manage-filter-set').value : 'All' });
+          } catch (err) {
+            console.error('Failed to delete word', err);
+            alert('Could not delete the word. Please try again.');
+          } finally {
+            delBtn.disabled = false;
+          }
+        });
+      }
+
+      return row;
+    }
+
+    // Manage table
     function renderManageTable(words) {
       const host = $('#manage-table');
       host.innerHTML = `
@@ -301,52 +432,37 @@ def index():
               <th class=\"p-2\">Set</th>
               <th class=\"p-2\">Word</th>
               <th class=\"p-2\">Definition</th>
-              <th class=\"p-2\">Example</th>
               <th class=\"p-2\">Actions</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>`;
-      const body = $('tbody', host);
-      const tpl = $('#tpl-manage-row');
+      manageBody = $('tbody', host);
       words.forEach(w => {
-        const row = tpl.content.cloneNode(true);
-        row.querySelector('.inp-set').value = w.set;
-        row.querySelector('.inp-word').value = w.word;
-        row.querySelector('.inp-def').value = w.definition;
-        row.querySelector('.inp-ex').value = w.example;
-        row.querySelector('.save').addEventListener('click', async ()=>{
-          const payload = {
-            id: w.id,
-            set: row.querySelector('.inp-set').value.trim(),
-            word: row.querySelector('.inp-word').value.trim(),
-            definition: row.querySelector('.inp-def').value.trim(),
-            example: row.querySelector('.inp-ex').value.trim(),
-          };
-          await api.upsert(payload);
-          await refreshAll();
-        });
-        row.querySelector('.del').addEventListener('click', async ()=>{
-          if (confirm(`Delete word \"${w.word}\"?`)) {
-            await api.remove(w.id);
-            await refreshAll();
-          }
-        });
-        body.appendChild(row);
+        manageBody.appendChild(createManageRow(w));
       });
     }
 
-    async function refreshAll() {
+    async function refreshAll(opts = {}) {
+      const prevSelections = captureSelectValues();
+      if (opts.learnSet) prevSelections.learn = opts.learnSet;
+      if (opts.testSet) prevSelections.test = opts.testSet;
+      if (opts.manageSet) prevSelections.manage = opts.manageSet;
+
       all = await api.list();
-      populateSets();
-      cardsFor(filterBySet($('#learn-set').value));
-      renderManageTable(filterBySet($('#manage-filter-set').value));
+      populateSets(all, prevSelections);
+      const learnSel = $('#learn-set');
+      const manageSel = $('#manage-filter-set');
+      const currentLearn = learnSel ? learnSel.value : 'All';
+      const currentManage = manageSel ? manageSel.value : 'All';
+      cardsFor(filterBySet(currentLearn));
+      renderManageTable(filterBySet(currentManage));
     }
 
     // Test mode engine
     let testQueue = []; // array of vocab
     let testIndex = 0;
-    let score = {spell:0, def:0, ex:0, total:0};
+    let score = {spell:0, def:0};
     let current = null;
 
     function pickRandom(arr, n) { return arr.slice().sort(()=>Math.random()-0.5).slice(0, n); }
@@ -367,12 +483,12 @@ def index():
       const header = document.createElement('div');
       header.className = 'flex items-center justify-between';
       header.innerHTML = `<div class=\"text-sm text-gray-600\">Question ${testIndex+1} / ${testQueue.length}</div>
-                          <div class=\"text-sm\">Score: <span id=\"score\">${score.spell+score.def+score.ex}</span></div>`;
+                          <div class=\"text-sm\">Score: <span id=\"score\">${score.spell+score.def}</span></div>`;
       host.appendChild(header);
 
       // Spelling (audio -> input)
       const box = document.createElement('div');
-      box.className = 'grid md:grid-cols-3 gap-4 mt-3';
+      box.className = 'grid md:grid-cols-2 gap-4 mt-3';
 
       const card1 = document.createElement('div');
       card1.className = 'p-5 rounded-2xl border bg-white shadow-sm';
@@ -389,14 +505,6 @@ def index():
         <div class=\"mt-3 grid gap-2\">${defs.map(d=>`<label class=\"flex gap-2 items-start\"><input type=\"radio\" name=\"def\" value=\"${(d||'').replaceAll('\\"','&quot;')}\"/> <span>${d}</span></label>`).join('')}</div>
         <div id=\"def-fb\" class=\"text-sm mt-2\"></div>`;
       box.appendChild(card2);
-
-      const card3 = document.createElement('div');
-      card3.className = 'p-5 rounded-2xl border bg-white shadow-sm';
-      const exs = buildMCQ(all.map(x=>x.example), current.example);
-      card3.innerHTML = `<h3 class=\"font-bold\">3) Pick the right example</h3>
-        <div class=\"mt-3 grid gap-2\">${exs.map(e=>`<label class=\"flex gap-2 items-start\"><input type=\"radio\" name=\"ex\" value=\"${(e||'').replaceAll('\\"','&quot;')}\"/> <span>${e}</span></label>`).join('')}</div>
-        <div id=\"ex-fb\" class=\"text-sm mt-2\"></div>`;
-      box.appendChild(card3);
 
       host.appendChild(box);
 
@@ -424,14 +532,7 @@ def index():
         $('#def-fb').className = 'text-sm mt-2 ' + (ok2?'text-green-600':'text-rose-600');
         if (ok2) { score.def++; got++; }
 
-        const selEx = (document.querySelector('input[name=\"ex\"]:checked')||{}).value || '';
-        const ok3 = selEx === current.example;
-        $('#ex-fb').textContent = ok3 ? '✅ Correct' : '❌ Incorrect';
-        $('#ex-fb').className = 'text-sm mt-2 ' + (ok3?'text-green-600':'text-rose-600');
-        if (ok3) { score.ex++; got++; }
-
-        score.total += got;
-        $('#score').textContent = score.spell+score.def+score.ex;
+        $('#score').textContent = score.spell+score.def;
       });
 
       $('#next').addEventListener('click', ()=>{
@@ -448,8 +549,8 @@ def index():
       $('#test-area').innerHTML = '';
       const sum = $('#test-summary');
       sum.classList.remove('hidden');
-      const totalQs = testQueue.length * 3;
-      const got = score.spell + score.def + score.ex;
+      const totalQs = testQueue.length * 2;
+      const got = score.spell + score.def;
       const pct = Math.round(100 * got / totalQs);
       sum.innerHTML = `
         <div class=\"p-6 rounded-2xl border bg-white shadow-sm\">
@@ -458,21 +559,18 @@ def index():
           <ul class=\"mt-3 text-gray-700 list-disc pl-6\">
             <li>Spelling: ${score.spell}/${testQueue.length}</li>
             <li>Definition: ${score.def}/${testQueue.length}</li>
-            <li>Example: ${score.ex}/${testQueue.length}</li>
           </ul>
           <div class=\"mt-4 flex gap-2\">
             <button id=\"again\" class=\"btn btn-primary\">Retake</button>
             <button id=\"back\" class=\"btn btn-ghost\">Back to Test Setup</button>
           </div>
         </div>`;
-      $('#again').onclick = ()=> { testIndex = 0; score={spell:0,def:0,ex:0,total:0}; renderTestItem(); };
+      $('#again').onclick = ()=> { testIndex = 0; score={spell:0,def:0}; renderTestItem(); };
       $('#back').onclick = ()=> { sum.classList.add('hidden'); };
     }
 
     async function boot() {
-      all = await api.list();
-      populateSets();
-      cardsFor(all);
+      await refreshAll();
 
       // Tabs
       const show = id => { ['learn','test','manage'].forEach(n=>{ $('#panel-'+n).classList.toggle('hidden', n!==id); $('#tab-'+n).classList.toggle('tab-active', n===id); }); };
@@ -486,15 +584,24 @@ def index():
       $('#test-start').onclick = async ()=>{
         const mode = $('#test-mode').value; const set = $('#test-set').value; const count = +$('#test-count').value || 25;
         const res = await api.test(mode, set, count);
-        testQueue = res.items; testIndex=0; score={spell:0,def:0,ex:0,total:0};
+        testQueue = res.items;
+        testIndex=0; score={spell:0,def:0};
         $('#test-summary').classList.add('hidden');
         renderTestItem();
       };
 
       $('#manage-filter-set').onchange = ()=> renderManageTable(filterBySet($('#manage-filter-set').value));
-      $('#new-word').onclick = async ()=>{
-        const payload = { id: '', set: prompt('Set name?')||'', word: prompt('Word?')||'', definition: prompt('Definition?')||'', example: prompt('Example sentence?')||'' };
-        await api.upsert(payload); await refreshAll();
+      $('#new-word').onclick = ()=>{
+        if (!manageBody) return;
+        if (manageBody.querySelector('tr[data-mode=\"new\"]')) {
+          const focusTarget = manageBody.querySelector('tr[data-mode=\"new\"] .inp-set');
+          if (focusTarget) focusTarget.focus();
+          return;
+        }
+        const row = createManageRow({id:'', set:'', word:'', definition:''}, {isNew:true});
+        manageBody.prepend(row);
+        const firstInput = row.querySelector('input');
+        if (firstInput) firstInput.focus();
       };
 
       $('#export-csv').onclick = async ()=>{
@@ -534,13 +641,14 @@ def api_vocabs():
 def api_upsert():
     payload: Dict = request.get_json() or {}
     rows = read_csv()
-    vid = payload.get('id') or str(uuid.uuid4())
+    vid = (payload.get('id') or '').strip()
+    if not vid:
+        vid = next_numeric_id(rows)
     new_row = Vocab(
         id=vid,
         set=(payload.get('set') or '').strip(),
         word=(payload.get('word') or '').strip(),
         definition=(payload.get('definition') or '').strip(),
-        example=(payload.get('example') or '').strip(),
     )
     # Update if exists else append
     found = False
@@ -581,15 +689,14 @@ def api_export_csv():
     rows = read_csv()
     # Stream CSV text
     def gen():
-        yield 'id,set,word,definition,example\n'
+        yield 'id,set,word,definition\n'
         for r in rows:
-            # escape embedded quotes by doubling them
-            def esc(s):
-                s = (s or '').replace('"', '""')
-                if ',' in s or '"' in s or '\n' in s:
-                    return f'"{s}"'
-                return s
-            yield f"{r.id},{esc(r.set)},{esc(r.word)},{esc(r.definition)},{esc(r.example)}\n"
+            yield (
+                f"{_csv_ensure_quotes(r.id)},"
+                f"{_csv_ensure_quotes(r.set)},"
+                f"{_csv_ensure_quotes(r.word)},"
+                f"{_csv_ensure_quotes(r.definition, force_quotes=True)}\n"
+            )
     return Response(gen(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=vocab.csv'})
 
 
@@ -602,13 +709,14 @@ def api_import_csv():
     reader = csv.DictReader(f)
     rows: List[Vocab] = []
     for r in reader:
-        rid = r.get('id') or str(uuid.uuid4())
+        rid = (r.get('id') or '').strip()
+        if not rid:
+            rid = next_numeric_id(rows)
         rows.append(Vocab(
             id=rid,
             set=r.get('set',''),
             word=r.get('word',''),
-            definition=r.get('definition',''),
-            example=r.get('example',''),
+            definition=r.get('definition','') or '',
         ))
     write_csv(rows)
     return jsonify({'ok': True, 'count': len(rows)})
@@ -651,7 +759,6 @@ def run_self_tests():
             'set': 'SelfTest',
             'word': 'alpha',
             'definition': 'the first letter of the Greek alphabet',
-            'example': 'Alpha comes before beta.'
         }
         r = c.post('/api/vocabs', data=json.dumps(payload), content_type='application/json')
         assert r.status_code == 200 and r.json.get('ok')
@@ -669,23 +776,23 @@ def run_self_tests():
 
         # Export CSV
         r = c.get('/api/vocabs.csv')
-        assert r.status_code == 200 and r.data.startswith(b'id,set,word,definition,example')
+        assert r.status_code == 200 and r.data.startswith(b'id,set,word,definition')
 
         # Delete
         r = c.delete(f'/api/vocabs/{new_id}')
         assert r.status_code == 200 and r.json.get('ok')
 
         # Roundtrip import: write two rows and re-import
-        sample = 'id,set,word,definition,example\n' \
-                 '1,Numbers,one,The number after zero,"I have one apple."\n' \
-                 '2,Numbers,two,The number after one,"We saw two birds."\n'
+        sample = 'id,set,word,definition\n' \
+                 '1,Numbers,one,The number after zero\n' \
+                 '2,Numbers,two,The number after one\n'
         r = c.post('/api/import', data=sample, content_type='text/csv')
         assert r.status_code == 200 and r.json.get('count') == 2
 
         # --- Additional tests ---
-        # Import a row with commas and quotes in definition/example to verify escaping on export
-        sample2 = 'id,set,word,definition,example\n' \
-                  '3,Mixed,quote,"A \"mark\" used in writing, often with commas, like \\"this\\"","He said, \"Hello, world!\""\n'
+        # Import a row with commas and quotes in definition to verify escaping on export
+        sample2 = 'id,set,word,definition\n' \
+                  '3,Mixed,quote,"A \"mark\" used in writing, often with commas, like \\"this\\""\n'
         r = c.post('/api/import', data=sample2, content_type='text/csv')
         assert r.status_code == 200 and r.json.get('count') == 1
         r = c.get('/api/vocabs.csv')
