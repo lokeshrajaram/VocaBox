@@ -159,7 +159,6 @@ def index():
           <select id=\"learn-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\"></select>
         </div>
         <div class=\"flex gap-2\">
-          <button id=\"learn-start\" class=\"btn btn-primary\">Start</button>
           <button id=\"learn-shuffle\" class=\"btn btn-ghost\">Shuffle</button>
         </div>
       </div>
@@ -169,31 +168,35 @@ def index():
 
     <!-- Test -->
     <section id=\"panel-test\" class=\"card p-6 hidden\">
-      <div class=\"grid md:grid-cols-4 gap-4\">
-        <div class=\"md:col-span-2\">
-          <label class=\"block text-sm font-semibold text-gray-700\">Mode</label>
-          <select id=\"test-mode\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\">
-            <option value=\"set\">Test a specific set</option>
-            <option value=\"all\">Test from all words</option>
-          </select>
+      <div class=\"border border-indigo-100 bg-indigo-50/70 rounded-2xl p-4 space-y-4\">
+        <div class=\"grid md:grid-cols-4 gap-4\">
+          <div class=\"md:col-span-2\">
+            <label class=\"block text-sm font-semibold text-gray-700\">Mode</label>
+            <select id=\"test-mode\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\">
+              <option value=\"set\">Test a specific set</option>
+              <option value=\"all\">Test from all sets</option>
+            </select>
+          </div>
+          <div class=\"md:col-span-1\">
+            <label class=\"block text-sm font-semibold text-gray-700\">Set</label>
+            <select id=\"test-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\"></select>
+          </div>
+          <div class=\"md:col-span-1\">
+            <label class=\"block text-sm font-semibold text-gray-700\"># Words</label>
+            <input id=\"test-count\" type=\"number\" min=\"1\" max=\"50\" value=\"20\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\" />
+          </div>
         </div>
-        <div class=\"md:col-span-1\">
-          <label class=\"block text-sm font-semibold text-gray-700\">Set</label>
-          <select id=\"test-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\"></select>
-        </div>
-        <div class=\"md:col-span-1\">
-          <label class=\"block text-sm font-semibold text-gray-700\"># Words</label>
-          <input id=\"test-count\" type=\"number\" min=\"1\" max=\"50\" value=\"25\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\" />
+
+        <div class=\"flex flex-wrap items-center gap-3\">
+          <button id=\"test-start\" class=\"btn btn-primary shadow-sm\">Start Test</button>
+          <div class=\"flex items-center gap-2 text-sm text-indigo-800 bg-white/80 border border-white rounded-full px-3 py-1 shadow-sm\">
+            <span class=\"text-lg\">💡</span>
+            <span>Press the space bar anytime to replay the current word.</span>
+          </div>
         </div>
       </div>
 
-      <div class=\"mt-4 flex gap-2\">
-        <button id=\"test-start\" class=\"btn btn-primary\">Start Test</button>
-        <button id=\"test-say\" class=\"btn btn-ghost\">🔊 Play Word</button>
-        <span class=\"text-sm text-gray-600\">Tip: press <span class=\"kbd\">Space</span> to replay audio</span>
-      </div>
-
-      <div id=\"test-area\" class=\"mt-6 grid gap-4\"></div>
+      <div id=\"test-area\" class=\"mt-6\"></div>
       <div id=\"test-summary\" class=\"mt-6 hidden\"></div>
     </section>
 
@@ -203,14 +206,6 @@ def index():
         <div class=\"flex-1\">
           <label class=\"block text-sm font-semibold text-gray-700\">Filter by Set</label>
           <select id=\"manage-filter-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\"></select>
-        </div>
-        <div class=\"\">
-          <button id=\"export-csv\" class=\"btn btn-ghost\">⬇️ Download CSV</button>
-        </div>
-        <div class=\"\">
-          <label class=\"btn btn-ghost cursor-pointer\">⬆️ Import CSV
-            <input id=\"import-csv\" type=\"file\" accept=\".csv\" class=\"hidden\" />
-          </label>
         </div>
         <div class=\"\">
           <button id=\"new-word\" class=\"btn btn-primary\">＋ New Word</button>
@@ -288,6 +283,7 @@ def index():
     }
 
     let all = [];
+    let setChoices = ['All'];
     let manageBody = null;
 
     function distinctSets(words) {
@@ -297,6 +293,7 @@ def index():
 
     function populateSets(words = all, prev = {}) {
       const sets = distinctSets(words);
+      setChoices = sets;
       const defaultValue = sets.includes('All') ? 'All' : (sets[0] || '');
       const fill = (sel, saved) => {
         const el = $(sel);
@@ -306,8 +303,8 @@ def index():
         if (target) { el.value = target; }
       };
       fill('#learn-set', prev.learn);
-      fill('#test-set', prev.test);
       fill('#manage-filter-set', prev.manage);
+      syncTestSetOptions(prev.test);
     }
 
     function cardsFor(words) {
@@ -337,6 +334,24 @@ def index():
         test: pick(testSel),
         manage: pick(manageSel),
       };
+    }
+
+    function syncTestSetOptions(savedValue) {
+      const select = $('#test-set');
+      const modeSel = $('#test-mode');
+      if (!select || !modeSel) return;
+      const mode = modeSel.value || 'set';
+      let options = [];
+      if (mode === 'all') {
+        options = ['All'];
+      } else {
+        options = setChoices.filter(x => x !== 'All');
+        if (!options.length) { options = ['All']; }
+      }
+      select.innerHTML = options.map(x=>`<option value="${x}">${x}</option>`).join('');
+      const target = (savedValue && options.includes(savedValue)) ? savedValue : (options[0] || 'All');
+      if (target) { select.value = target; }
+      select.disabled = (mode === 'all');
     }
 
     function createManageRow(word, {isNew=false}={}) {
@@ -486,27 +501,24 @@ def index():
                           <div class=\"text-sm\">Score: <span id=\"score\">${score.spell+score.def}</span></div>`;
       host.appendChild(header);
 
-      // Spelling (audio -> input)
-      const box = document.createElement('div');
-      box.className = 'grid md:grid-cols-2 gap-4 mt-3';
-
-      const card1 = document.createElement('div');
-      card1.className = 'p-5 rounded-2xl border bg-white shadow-sm';
-      card1.innerHTML = `<div class=\"flex justify-between items-center\"><h3 class=\"font-bold\">1) Spell the word you hear</h3>
-                         <button class=\"btn btn-ghost\" id=\"say1\">🔊 Play</button></div>
-                         <input id=\"spell-inp\" class=\"w-full mt-3 p-3 rounded-xl border\" placeholder=\"Type spelling\"/>
-                         <div id=\"spell-fb\" class=\"text-sm mt-2\"></div>`;
-      box.appendChild(card1);
-
-      const card2 = document.createElement('div');
-      card2.className = 'p-5 rounded-2xl border bg-white shadow-sm';
       const defs = buildMCQ(all.map(x=>x.definition), current.definition);
-      card2.innerHTML = `<h3 class=\"font-bold\">2) Match the definition</h3>
-        <div class=\"mt-3 grid gap-2\">${defs.map(d=>`<label class=\"flex gap-2 items-start\"><input type=\"radio\" name=\"def\" value=\"${(d||'').replaceAll('\\"','&quot;')}\"/> <span>${d}</span></label>`).join('')}</div>
-        <div id=\"def-fb\" class=\"text-sm mt-2\"></div>`;
-      box.appendChild(card2);
 
-      host.appendChild(box);
+      const card = document.createElement('div');
+      card.className = 'p-5 rounded-2xl border bg-white shadow-sm mt-3 space-y-6';
+      card.innerHTML = `
+        <div>
+          <div class=\"flex justify-between items-center\">
+            <h3 class=\"font-bold\">Spell the word you hear</h3>
+            <button class=\"btn btn-ghost\" id=\"say1\">🔊 Play</button>
+          </div>
+          <input id=\"spell-inp\" class=\"w-full mt-3 p-3 rounded-xl border\" placeholder=\"Type spelling\"/>
+          <div id=\"spell-fb\" class=\"text-sm mt-2\"></div>
+        </div>
+        <div>
+          <div class=\"mt-3 grid gap-2\">${defs.map(d=>`<label class=\"flex gap-2 items-start\"><input type=\"radio\" name=\"def\" value=\"${(d||'').replaceAll('\\"','&quot;')}\"/> <span>${d}</span></label>`).join('')}</div>
+          <div id=\"def-fb\" class=\"text-sm mt-2\"></div>
+        </div>`;
+      host.appendChild(card);
 
       const actions = document.createElement('div');
       actions.className = 'mt-4 flex gap-2';
@@ -515,10 +527,12 @@ def index():
       host.appendChild(actions);
 
       $('#say1').addEventListener('click', ()=> speak(current.word));
-      $('#test-say').onclick = ()=> speak(current.word);
       window.onkeydown = (e)=>{ if (e.code==='Space') { e.preventDefault(); speak(current.word); } };
 
-      $('#check').addEventListener('click', ()=>{
+      let checked = false;
+      const evaluate = ()=>{
+        if (checked) return;
+        checked = true;
         let got = 0;
         const spell = ($('#spell-inp').value || '').trim().toLowerCase();
         const ok1 = spell === (current.word||'').toLowerCase();
@@ -533,9 +547,12 @@ def index():
         if (ok2) { score.def++; got++; }
 
         $('#score').textContent = score.spell+score.def;
-      });
+      };
+
+      $('#check').addEventListener('click', evaluate);
 
       $('#next').addEventListener('click', ()=>{
+        evaluate();
         testIndex++;
         if (testIndex >= testQueue.length) {
           renderSummary();
@@ -578,11 +595,12 @@ def index():
       $('#tab-test').onclick = ()=> show('test');
       $('#tab-manage').onclick = ()=> show('manage');
 
-      $('#learn-start').onclick = ()=> cardsFor(filterBySet($('#learn-set').value));
+      $('#learn-set').onchange = ()=> cardsFor(filterBySet($('#learn-set').value));
+      $('#test-mode').onchange = ()=> syncTestSetOptions($('#test-set') ? $('#test-set').value : 'All');
       $('#learn-shuffle').onclick = ()=> { all = all.sort(()=>Math.random()-0.5); cardsFor(filterBySet($('#learn-set').value)); };
 
       $('#test-start').onclick = async ()=>{
-        const mode = $('#test-mode').value; const set = $('#test-set').value; const count = +$('#test-count').value || 25;
+        const mode = $('#test-mode').value; const set = $('#test-set').value; const count = +$('#test-count').value || 20;
         const res = await api.test(mode, set, count);
         testQueue = res.items;
         testIndex=0; score={spell:0,def:0};
@@ -604,18 +622,6 @@ def index():
         if (firstInput) firstInput.focus();
       };
 
-      $('#export-csv').onclick = async ()=>{
-        const csv = await api.exportCSV();
-        const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'vocab.csv'; a.click(); URL.revokeObjectURL(url);
-      };
-
-      $('#import-csv').onchange = async (e)=>{
-        const file = e.target.files[0]; if (!file) return;
-        const text = await file.text();
-        await api.importCSV(text); await refreshAll(); e.target.value='';
-      };
     }
 
     boot();
