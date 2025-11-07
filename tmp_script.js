@@ -1,281 +1,4 @@
-#!/usr/bin/env python3
-# app.py — VocaBox: a local web app for kids to learn and practice vocabulary
-# Runs entirely on your machine: Python (Flask) backend that reads/writes a CSV repo file,
-# and a single-page Tailwind-style UI frontend served from the same app.
-#
-# CSV schema (./data/vocab.csv):
-# id,set,word,definition
-# Example rows:
-# 1,Animals,giraffe,An African mammal with a very long neck,"The giraffe ate leaves from the tall tree."
-# 2,School,homework,Work assigned to students to do at home,"I finished my homework before dinner."
-#
-# Quick start
-#   1) python3 -m venv .venv && source .venv/bin/activate
-#   2) pip install flask
-#   3) python app.py
-#   4) Open http://127.0.0.1:5000
 
-import csv
-import os
-import random
-import threading
-import argparse
-from dataclasses import dataclass, asdict
-from typing import List, Dict
-
-from flask import Flask, jsonify, request, Response
-
-app = Flask(__name__)
-LOCK = threading.Lock()
-
-# --- Robust data directory handling (works even if __file__ is undefined) ---
-try:
-    BASE_DIR = os.path.dirname(__file__)
-except NameError:
-    BASE_DIR = os.getcwd()
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-CSV_PATH = os.path.join(DATA_DIR, 'vocab.csv')
-
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# Ensure CSV exists with headers
-if not os.path.exists(CSV_PATH):
-    with open(CSV_PATH, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(['id', 'set', 'word', 'definition'])
-
-@dataclass
-class Vocab:
-    id: str
-    set: str
-    word: str
-    definition: str
-
-
-def read_csv() -> List[Vocab]:
-    with LOCK:
-        rows: List[Vocab] = []
-        with open(CSV_PATH, 'r', newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                rows.append(Vocab(
-                    id=r['id'],
-                    set=r.get('set', ''),
-                    word=r.get('word', ''),
-                    definition=r.get('definition', '') or r.get('definition ') or '',
-                ))
-        return rows
-
-
-def _csv_ensure_quotes(value: str, force_quotes: bool = False) -> str:
-    """
-    Escape CSV field and wrap in double quotes when needed.
-    When force_quotes is True, always wrap (used for definition column).
-    """
-    text = (value or '').replace('"', '""')
-    if force_quotes or any(ch in text for ch in (',', '"', '\n')):
-        return f'"{text}"'
-    return text
-
-
-def write_csv(rows: List[Vocab]):
-    with LOCK:
-        with open(CSV_PATH, 'w', newline='', encoding='utf-8') as f:
-            f.write('id,set,word,definition\n')
-            for r in rows:
-                fields = [
-                    _csv_ensure_quotes(r.id),
-                    _csv_ensure_quotes(r.set),
-                    _csv_ensure_quotes(r.word),
-                    _csv_ensure_quotes(r.definition, force_quotes=True),
-                ]
-                f.write(','.join(fields) + '\n')
-
-
-def next_numeric_id(rows: List[Vocab]) -> str:
-    """
-    Returns the next integer ID (as a string) based on existing rows.
-    Non-numeric IDs are ignored.
-    """
-    max_id = 0
-    for row in rows:
-        try:
-            max_id = max(max_id, int(row.id))
-        except (TypeError, ValueError):
-            continue
-    return str(max_id + 1 if max_id >= 0 else 1)
-
-
-@app.route('/')
-def index():
-    # Single-file frontend: Tailwind CDN + minimal custom CSS (no @apply) + JS SPA
-    # NOTE: Deliberately NOT an f-string to avoid Python interpreting `{}` from JS template literals.
-    html = """
-<!DOCTYPE html>
-<html lang=\"en\">
-<head>
-  <meta charset=\"UTF-8\" />
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
-  <title>VocaBox</title>
-  <script src=\"https://cdn.tailwindcss.com\"></script>
-  <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap\" rel=\"stylesheet\" />
-  <style>
-    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    .card { background: #fff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.1); border: 1px solid #f3f4f6; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; padding: .5rem 1rem; border-radius: .75rem; font-weight: 600; transition: transform .05s ease; }
-    .btn:active { transform: scale(.97); }
-    .btn-primary { background: #4f46e5; color: #fff; }
-    .btn-primary:hover { background: #4338ca; }
-    .btn-ghost { background: #f3f4f6; }
-    .btn-ghost:hover { background: #e5e7eb; }
-    .tab { padding: .5rem 1rem; border-radius: .75rem; cursor: pointer; }
-    .tab-active { background: #4f46e5; color: #fff; }
-    .kbd { padding: .25rem .5rem; border-radius: .375rem; background: #f3f4f6; border: 1px solid #d1d5db; font-size: .875rem; }
-  </style>
-</head>
-<body class=\"bg-gradient-to-b from-indigo-50 to-white min-h-screen\">
-  <header class=\"max-w-6xl mx-auto px-4 pt-10 pb-6\">
-    <div class=\"flex items-center gap-3\">
-      <div class=\"h-12 w-12 rounded-2xl bg-indigo-600 text-white grid place-items-center text-2xl font-black\">V</div>
-      <div>
-        <h1 class=\"text-3xl font-black text-gray-900\">VocaBox</h1>
-        <p class=\"text-gray-600\">Learn • Practice • Shine — classroom vocab made fun</p>
-      </div>
-    </div>
-  </header>
-
-  <main class=\"max-w-6xl mx-auto px-4 pb-24\">
-    <div class=\"flex flex-wrap gap-2 mb-6\">
-      <button id=\"tab-learn\" class=\"tab tab-active\">Learning Mode</button>
-      <button id=\"tab-practice\" class=\"tab\">Practice Mode</button>
-      <button id=\"tab-test\" class=\"tab\">Test Mode</button>
-      <button id=\"tab-manage\" class=\"tab\">Manage Words</button>
-    </div>
-
-    <!-- Learn -->
-    <section id=\"panel-learn\" class=\"card p-6\">
-      <div class=\"flex flex-col md:flex-row gap-4 md:items-end\">
-        <div class=\"flex-1\">
-          <label class=\"block text-sm font-semibold text-gray-700\">Choose Set</label>
-          <select id=\"learn-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\"></select>
-        </div>
-        <div class=\"flex gap-2\">
-          <button id=\"learn-shuffle\" class=\"btn btn-ghost\">Shuffle</button>
-        </div>
-      </div>
-
-      <div id=\"learn-cards\" class=\"grid md:grid-cols-2 gap-4 mt-6\"></div>
-    </section>
-
-    <!-- Practice -->
-    <section id=\"panel-practice\" class=\"card p-6 hidden\">
-      <div class=\"border border-indigo-100 bg-indigo-50/70 rounded-2xl p-4 space-y-4\">
-        <div class=\"grid md:grid-cols-4 gap-4\">
-          <div class=\"md:col-span-2\">
-            <label class=\"block text-sm font-semibold text-gray-700\">Mode</label>
-            <select id=\"practice-mode\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\">
-              <option value=\"set\">Practice a specific set</option>
-              <option value=\"all\">Practice from all sets</option>
-            </select>
-          </div>
-          <div class=\"md:col-span-1\">
-            <label class=\"block text-sm font-semibold text-gray-700\">Set</label>
-            <select id=\"practice-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\"></select>
-          </div>
-          <div class=\"md:col-span-1\">
-            <label class=\"block text-sm font-semibold text-gray-700\"># Words</label>
-            <input id=\"practice-count\" type=\"number\" min=\"1\" max=\"50\" value=\"20\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\" />
-          </div>
-        </div>
-
-        <div class=\"flex flex-wrap items-center gap-3\">
-          <button id=\"practice-start\" class=\"btn btn-primary shadow-sm\">Start Practice</button>
-          <div class=\"flex items-center gap-2 text-sm text-indigo-800 bg-white/80 border border-white rounded-full px-3 py-1 shadow-sm\">
-            <span class=\"text-lg\">💡</span>
-            <span>Press the space bar anytime to replay the current word.</span>
-          </div>
-        </div>
-      </div>
-
-      <div id=\"practice-area\" class=\"mt-6\"></div>
-      <div id=\"practice-summary\" class=\"mt-6 hidden\"></div>
-    </section>
-
-    <!-- Test -->
-    <section id=\"panel-test\" class=\"card p-6 hidden\">
-      <div class=\"border border-indigo-100 bg-indigo-50/70 rounded-2xl p-4 space-y-4\">
-        <div class=\"grid md:grid-cols-4 gap-4\">
-          <div class=\"md:col-span-2\">
-            <label class=\"block text-sm font-semibold text-gray-700\">Mode</label>
-            <select id=\"test-mode\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\">
-              <option value=\"set\">Test a specific set</option>
-              <option value=\"all\">Test from all sets</option>
-            </select>
-          </div>
-          <div class=\"md:col-span-1\">
-            <label class=\"block text-sm font-semibold text-gray-700\">Set</label>
-            <select id=\"test-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\"></select>
-          </div>
-          <div class=\"md:col-span-1\">
-            <label class=\"block text-sm font-semibold text-gray-700\"># Words</label>
-            <input id=\"test-count\" type=\"number\" min=\"1\" max=\"50\" value=\"20\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200\" />
-          </div>
-        </div>
-
-        <div class=\"flex flex-wrap items-center gap-3\">
-          <button id=\"test-start\" class=\"btn btn-primary shadow-sm\">Start Test</button>
-          <div class=\"flex items-center gap-2 text-sm text-indigo-800 bg-white/80 border border-white rounded-full px-3 py-1 shadow-sm\">
-            <span class=\"text-lg\">⏱️</span>
-            <span>Stay focused—no hints during Test Mode!</span>
-          </div>
-        </div>
-      </div>
-
-      <div id=\"test-area\" class=\"mt-6\"></div>
-      <div id=\"test-summary\" class=\"mt-6 hidden\"></div>
-    </section>
-
-    <!-- Manage -->
-    <section id=\"panel-manage\" class=\"card p-6 hidden\">
-      <div class=\"flex flex-wrap items-end gap-4\">
-        <div class=\"flex-1\">
-          <label class=\"block text-sm font-semibold text-gray-700\">Filter by Set</label>
-          <select id=\"manage-filter-set\" class=\"w-full mt-1 p-3 rounded-xl border border-gray-300\"></select>
-        </div>
-        <div class=\"\">
-          <button id=\"new-word\" class=\"btn btn-primary\">＋ New Word</button>
-        </div>
-      </div>
-
-      <div id=\"manage-table\" class=\"overflow-x-auto mt-6\"></div>
-    </section>
-  </main>
-
-  <template id=\"tpl-learn-card\">
-    <div class=\"p-5 rounded-2xl border bg-white shadow-sm\">
-      <h3 class=\"text-2xl font-black flex items-center gap-3\">
-        <span class=\"word\"></span>
-        <button class=\"say\" title=\"Play pronunciation\">🔊</button>
-      </h3>
-      <div class=\"mt-3 text-gray-700\"><span class=\"font-semibold\">Definition:</span> <span class=\"def\"></span></div>
-    </div>
-  </template>
-
-  <template id=\"tpl-manage-row\">
-    <tr>
-      <td class=\"p-2\"><input class=\"inp-set w-36 p-2 rounded border\"></td>
-      <td class=\"p-2\"><input class=\"inp-word w-44 p-2 rounded border\"></td>
-      <td class=\"p-2\"><input class=\"inp-def w-96 p-2 rounded border\"></td>
-      <td class=\"p-2\">
-        <div class=\"flex gap-2\">
-          <button type=\"button\" class=\"save btn btn-primary\">Save</button>
-          <button type=\"button\" class=\"del btn btn-ghost\">Delete</button>
-        </div>
-      </td>
-    </tr>
-  </template>
-
-  <script>
     const $ = (sel, el=document) => el.querySelector(sel);
     const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
     const api = {
@@ -359,12 +82,17 @@ def index():
 
     const sentenceTemplates = [
       'During the {context}, {speaker} used the word {word} to clarify that it means {definition}, and {reaction}.',
-      '{speaker} whispered {word} to me in the middle of our {context} so I\\\'d remember it describes {definition}.',
+      '{speaker} whispered {word} to me in the middle of our {context} so I\'d remember it describes {definition}.',
       'Right before the {context} deadline, I explained {definition} by saying {word}, and {reaction}.',
       'While the {context} heated up, we paused to note that {word} is the term for {definition}.',
       'Our {context} presentation sounded sharper once we defined {word} as {definition}.',
       'I highlighted {word} in my notebook because it captures {definition}, which made {reaction}.'
     ];
+
+    function escapeRegExp(str='') {
+      const specials = '.^$*+?()[]{}|\\\\';
+      return Array.from(str || '').map(ch => specials.includes(ch) ? '\\\\' + ch : ch).join('');
+    }
 
     function choose(list) {
       if (!Array.isArray(list) || !list.length) return '';
@@ -394,21 +122,8 @@ def index():
 
     function maskWord(sentence, word) {
       if (!sentence || !word) return sentence;
-      const lowerSentence = sentence.toLowerCase();
-      const target = (word || '').toLowerCase();
-      if (!target.length) return sentence;
-      let result = '';
-      let i = 0;
-      while (i < sentence.length) {
-        if (lowerSentence.slice(i, i + target.length) === target) {
-          result += '_____';
-          i += target.length;
-        } else {
-          result += sentence[i];
-          i += 1;
-        }
-      }
-      return result;
+      const regex = new RegExp(escapeRegExp(word), 'ig');
+      return sentence.replace(regex, '_____');
     }
 
     function insertInlineBlank(container, maskedText, datasetIndex) {
@@ -923,27 +638,25 @@ def index():
       const wordAction = session.label === 'Test' ? 'tested' : 'practiced';
       const detailCards = session.components.map(name=>{
         if (name === 'spell') {
-          return `<div class=\"rounded-2xl bg-white/90 border border-indigo-100 p-5 shadow-sm flex flex-col justify-between\">
+          return `<div class=\"rounded-2xl bg-white/90 border border-indigo-100 p-5 shadow-sm\">
                     <p class=\"text-xs uppercase tracking-[0.3em] text-gray-400\">Spelling Mastery</p>
                     <p class=\"mt-3 text-3xl font-black text-indigo-600\">${session.score.spell}</p>
                     <p class=\"text-sm text-gray-500\">out of ${wordsPracticed} words</p>
                   </div>`;
         }
         if (name === 'def') {
-          return `<div class=\"rounded-2xl bg-white/90 border border-emerald-100 p-5 shadow-sm flex flex-col justify-between\">
+          return `<div class=\"rounded-2xl bg-white/90 border border-emerald-100 p-5 shadow-sm\">
                     <p class=\"text-xs uppercase tracking-[0.3em] text-gray-400\">Definition Guru</p>
                     <p class=\"mt-3 text-3xl font-black text-emerald-600\">${session.score.def}</p>
                     <p class=\"text-sm text-gray-500\">out of ${wordsPracticed} clues</p>
                   </div>`;
         }
-        return `<div class=\"rounded-2xl bg-white/90 border border-purple-100 p-5 shadow-sm flex flex-col justify-between\">
+        return `<div class=\"rounded-2xl bg-white/90 border border-purple-100 p-5 shadow-sm\">
                   <p class=\"text-xs uppercase tracking-[0.3em] text-gray-400\">Sentence Hero</p>
                   <p class=\"mt-3 text-3xl font-black text-purple-600\">${session.score.fill}</p>
                   <p class=\"text-sm text-gray-500\">blanks solved</p>
                 </div>`;
       }).join('');
-      const totalStatCards = session.components.length + 1;
-      const statCols = totalStatCards >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
       sum.innerHTML = `
         <div class=\"relative overflow-hidden rounded-[32px] border-[6px] border-amber-200 bg-gradient-to-br from-amber-50 via-white to-indigo-50 shadow-2xl px-6 py-10 sm:px-12\">
           <div class=\"absolute inset-0 pointer-events-none\">
@@ -960,7 +673,7 @@ def index():
               <span>Hooray! Keep shining bright.</span>
             </div>
           </div>
-          <div class=\"relative mt-10 grid gap-4 ${statCols}\">
+          <div class=\"relative mt-10 grid gap-4 sm:grid-cols-3\">
             <div class=\"rounded-2xl bg-white/90 border border-amber-100 p-5 shadow-sm\">
               <p class=\"text-xs uppercase tracking-[0.3em] text-gray-400\">Overall Score</p>
               <p class=\"mt-3 text-4xl font-black text-gray-900\">${pct}%</p>
@@ -1061,224 +774,4 @@ def index():
     } else {
       boot();
     }
-  </script>
-</body>
-</html>
-    """
-    return Response(html, mimetype='text/html')
-
-
-@app.route('/api/health')
-def api_health():
-    return jsonify({"ok": True})
-
-
-@app.route('/api/vocabs')
-def api_vocabs():
-    rows = read_csv()
-    return jsonify([asdict(r) for r in rows])
-
-
-@app.route('/api/vocabs', methods=['POST'])
-def api_upsert():
-    payload: Dict = request.get_json() or {}
-    rows = read_csv()
-    vid = (payload.get('id') or '').strip()
-    if not vid:
-        vid = next_numeric_id(rows)
-    new_row = Vocab(
-        id=vid,
-        set=(payload.get('set') or '').strip(),
-        word=(payload.get('word') or '').strip(),
-        definition=(payload.get('definition') or '').strip(),
-    )
-    # Update if exists else append
-    found = False
-    for i, r in enumerate(rows):
-        if r.id == vid:
-            rows[i] = new_row
-            found = True
-            break
-    if not found:
-        rows.append(new_row)
-    write_csv(rows)
-    return jsonify({'ok': True, 'id': vid})
-
-
-@app.route('/api/vocabs/<vid>', methods=['DELETE'])
-def api_delete(vid: str):
-    rows = read_csv()
-    rows = [r for r in rows if r.id != vid]
-    write_csv(rows)
-    return jsonify({'ok': True})
-
-
-@app.route('/api/test')
-def api_test():
-    mode = request.args.get('mode', 'set')
-    set_name = request.args.get('set', 'All')
-    count = max(1, min(50, int(request.args.get('count', '25'))))
-
-    rows = read_csv()
-    pool = rows if mode == 'all' or set_name == 'All' else [r for r in rows if (r.set or '') == set_name]
-    random.shuffle(pool)
-    items = pool[:count]
-    return jsonify({'items': [asdict(x) for x in items]})
-
-
-@app.route('/api/vocabs.csv')
-def api_export_csv():
-    rows = read_csv()
-    # Stream CSV text
-    def gen():
-        yield 'id,set,word,definition\n'
-        for r in rows:
-            yield (
-                f"{_csv_ensure_quotes(r.id)},"
-                f"{_csv_ensure_quotes(r.set)},"
-                f"{_csv_ensure_quotes(r.word)},"
-                f"{_csv_ensure_quotes(r.definition, force_quotes=True)}\n"
-            )
-    return Response(gen(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=vocab.csv'})
-
-
-@app.route('/api/import', methods=['POST'])
-def api_import_csv():
-    text = request.get_data(as_text=True) or ''
-    # parse CSV into rows (skip header autodetect)
-    import io
-    f = io.StringIO(text)
-    reader = csv.DictReader(f)
-    rows: List[Vocab] = []
-    for r in reader:
-        rid = (r.get('id') or '').strip()
-        if not rid:
-            rid = next_numeric_id(rows)
-        rows.append(Vocab(
-            id=rid,
-            set=r.get('set',''),
-            word=r.get('word',''),
-            definition=r.get('definition','') or '',
-        ))
-    write_csv(rows)
-    return jsonify({'ok': True, 'count': len(rows)})
-
-
-def _multiprocessing_available() -> bool:
-    """Return True if importing multiprocessing synchronization primitives works.
-    This import will trigger the underlying `_multiprocessing` extension; if it's
-    missing in sandboxed envs, we catch it and avoid enabling debug server bits
-    that require it (Werkzeug debugger & reloader)."""
-    try:
-        import multiprocessing as _mp  # noqa: F401
-        # Import a submodule that relies on _multiprocessing
-        from multiprocessing import synchronize  # noqa: F401
-        return True
-    except Exception:
-        return False
-
-
-def run_self_tests():
-    """Basic smoke tests to ensure the app serves and CSV I/O works."""
-    import json
-    from flask.testing import FlaskClient
-
-    print('[TEST] starting self tests…')
-    with app.test_client() as c:  # type: FlaskClient
-        # Health
-        r = c.get('/api/health')
-        assert r.status_code == 200 and r.json.get('ok') is True
-
-        # List (initially possibly empty)
-        r = c.get('/api/vocabs')
-        assert r.status_code == 200
-        before = r.get_json()
-        assert isinstance(before, list)
-
-        # Upsert new
-        payload = {
-            'id': '',
-            'set': 'SelfTest',
-            'word': 'alpha',
-            'definition': 'the first letter of the Greek alphabet',
-        }
-        r = c.post('/api/vocabs', data=json.dumps(payload), content_type='application/json')
-        assert r.status_code == 200 and r.json.get('ok')
-        new_id = r.json.get('id')
-        assert new_id
-
-        # List again should include the item
-        r = c.get('/api/vocabs')
-        after = r.get_json()
-        assert any(x['id'] == new_id for x in after)
-
-        # Test endpoint (choose 1 word)
-        r = c.get('/api/test?mode=set&set=SelfTest&count=1')
-        assert r.status_code == 200 and len(r.json.get('items', [])) == 1
-
-        # Export CSV
-        r = c.get('/api/vocabs.csv')
-        assert r.status_code == 200 and r.data.startswith(b'id,set,word,definition')
-
-        # Delete
-        r = c.delete(f'/api/vocabs/{new_id}')
-        assert r.status_code == 200 and r.json.get('ok')
-
-        # Roundtrip import: write two rows and re-import
-        sample = 'id,set,word,definition\n' \
-                 '1,Numbers,one,The number after zero\n' \
-                 '2,Numbers,two,The number after one\n'
-        r = c.post('/api/import', data=sample, content_type='text/csv')
-        assert r.status_code == 200 and r.json.get('count') == 2
-
-        # --- Additional tests ---
-        # Import a row with commas and quotes in definition to verify escaping on export
-        sample2 = 'id,set,word,definition\n' \
-                  '3,Mixed,quote,"A \"mark\" used in writing, often with commas, like \\"this\\""\n'
-        r = c.post('/api/import', data=sample2, content_type='text/csv')
-        assert r.status_code == 200 and r.json.get('count') == 1
-        r = c.get('/api/vocabs.csv')
-        assert r.status_code == 200 and b'"Hello, world!"' in r.data
-
-        # Test ALL mode caps at available items when count > pool size
-        r = c.get('/api/test?mode=all&count=25')
-        assert r.status_code == 200
-        items = r.json.get('items', [])
-        # should be at most the number of rows present
-        r_list = c.get('/api/vocabs')
-        total_rows = len(r_list.get_json())
-        assert len(items) <= total_rows
-
-        # Deleting non-existent id should still return ok=True (idempotent)
-        r = c.delete('/api/vocabs/does-not-exist')
-        assert r.status_code == 200 and r.json.get('ok')
-
-    print('[TEST] all self tests passed!')
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--selftest', action='store_true', help='run built-in smoke tests and exit')
-    parser.add_argument('--host', default='127.0.0.1')
-    parser.add_argument('--port', default=5000, type=int)
-    parser.add_argument('--debug', action='store_true', help='enable Flask debug/reloader (requires multiprocessing support)')
-    args = parser.parse_args()
-
-    mp_ok = _multiprocessing_available()
-
-    # Allow env toggle too (VOCA_DEBUG=1), but force-off if multiprocessing is unavailable
-    env_debug = os.environ.get('VOCA_DEBUG', '').lower() in ('1', 'true', 'yes')
-    safe_debug = (args.debug or env_debug) and mp_ok
-
-    # When multiprocessing (and thus Werkzeug debugger pin) isn't available, disable debugger/reloader
-    run_kwargs = dict(host=args.host, port=args.port)
-    if safe_debug:
-        run_kwargs.update(dict(debug=True, use_reloader=True, use_debugger=True))
-    else:
-        # Explicitly turn off debugger and reloader to avoid importing _multiprocessing
-        run_kwargs.update(dict(debug=False, use_reloader=False, use_debugger=False, use_evalex=False))
-
-    if args.selftest:
-        run_self_tests()
-    else:
-        app.run(**run_kwargs)
+  
