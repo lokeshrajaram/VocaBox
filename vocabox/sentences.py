@@ -34,7 +34,7 @@ def generate_sentences_via_ollama(items: List[Dict[str, str]]) -> List[str]:
     if not items:
         return []
     try:
-        model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+        model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
         base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         if not model:
             return []
@@ -42,8 +42,8 @@ def generate_sentences_via_ollama(items: List[Dict[str, str]]) -> List[str]:
             "role": "system",
             "content": (
                 "You help middle school students learn vocabulary by writing one sentence "
-                "per word. Each sentence must be positive, age-appropriate, and clearly "
-                "demonstrate the word's meaning using the supplied definition. Return a JSON array of sentences."
+                "per word. Each sentence must be positive and age-appropriate."
+                " Return a JSON array of sentences."
             ),
         }
         user_message = {
@@ -52,7 +52,6 @@ def generate_sentences_via_ollama(items: List[Dict[str, str]]) -> List[str]:
                 [
                     {
                         "word": item.get("word", ""),
-                        "definition": item.get("definition", ""),
                     }
                     for item in items
                 ],
