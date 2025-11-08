@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -246,7 +247,7 @@
 
     const sentenceTemplates = [
       'During the {context}, {speaker} used the word {word} to clarify that it means {definition}, and {reaction}.',
-      '{speaker} whispered {word} to me in the middle of our {context} so I\\'d remember it describes {definition}.',
+      '{speaker} whispered {word} to me in the middle of our {context} so I\'d remember it describes {definition}.',
       'Right before the {context} deadline, I explained {definition} by saying {word}, and {reaction}.',
       'While the {context} heated up, we paused to note that {word} is the term for {definition}.',
       'Our {context} presentation sounded sharper once we defined {word} as {definition}.',
@@ -277,24 +278,6 @@
         .replace(/{context}/g, context)
         .replace(/{speaker}/g, speaker)
         .replace(/{reaction}/g, reaction);
-    }
-
-    async function fetchDynamicSentences(items) {
-      try {
-        const res = await fetch('/api/sentences', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items }),
-        });
-        if (!res.ok) throw new Error('Failed to fetch sentences');
-        const data = await res.json();
-        if (Array.isArray(data.sentences) && data.sentences.length === items.length) {
-          return data.sentences.map(s => (s || '').trim());
-        }
-      } catch (err) {
-        console.error('Dynamic sentence fetch failed', err);
-      }
-      return items.map(item => craftSentence(item.word || '', item.definition || ''));
     }
 
     function maskWord(sentence, word) {
@@ -606,11 +589,7 @@
         session.current = null;
         session.meta = {mode, set, count, startedAt: new Date()};
         session.wordBank = Array.from(new Set(session.queue.map(item => item.word).filter(Boolean)));
-        if (panelKey === 'test' && session.queue.length) {
-          session.sentences = await fetchDynamicSentences(session.queue);
-        } else {
-          session.sentences = session.queue.map(item => craftSentence(item.word || 'word', item.definition || 'something interesting'));
-        }
+        session.sentences = session.queue.map(item => craftSentence(item.word || 'word', item.definition || 'something interesting'));
         session.displayOrder = [];
         if (session.els.summary) session.els.summary.classList.add('hidden');
         if (session.els.area) session.els.area.innerHTML = '';
