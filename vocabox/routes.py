@@ -12,6 +12,21 @@ from .sentences import generate_sentences_via_ollama
 bp = Blueprint('vocabox', __name__)
 
 
+@bp.after_request
+def disable_api_caching(response):
+    """
+    Ensure API endpoints (and the SPA shell) are never served from
+    a stale HTTP cache. Chrome was occasionally re-validating the
+    GET /api/test response and returning a 304 with an empty body,
+    which breaks fetch(). Forcing no-store avoids that scenario.
+    """
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.headers.pop('ETag', None)
+    return response
+
+
 @bp.route('/')
 def index():
     return render_template('index.html')

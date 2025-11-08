@@ -166,13 +166,56 @@
   <script>
     const $ = (sel, el=document) => el.querySelector(sel);
     const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+    function escapeRegExp(str='') {
+      return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    async function fetchJSON(path, options) {
+      const init = {};
+      const source = options || {};
+      for (const key in source) {
+        if (Object.prototype.hasOwnProperty.call(source, key) && key !== 'headers') {
+          init[key] = source[key];
+        }
+      }
+      init.cache = 'no-store';
+      const headerSource = source.headers || {};
+      const headers = {};
+      for (const key in headerSource) {
+        if (Object.prototype.hasOwnProperty.call(headerSource, key)) {
+          headers[key] = headerSource[key];
+        }
+      }
+      init.headers = headers;
+      const res = await fetch(path, init);
+      const raw = await res.text();
+      const trimmed = raw.trim();
+      let data = null;
+      if (trimmed) {
+        try {
+          data = JSON.parse(trimmed);
+        } catch (err) {
+          throw new Error(`Server returned invalid JSON (status ${res.status}).`);
+        }
+      }
+      if (!res.ok) {
+        const message = (data && (data.error || data.message)) || raw || `Request failed with status ${res.status}.`;
+        throw new Error(message);
+      }
+      if (data === null) {
+        throw new Error('Server returned an empty response.');
+      }
+      return data;
+    }
+
     const api = {
-      list: async function() { return (await fetch('/api/vocabs')).json(); },
-      upsert: async function(v) { return (await fetch('/api/vocabs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v)})).json(); },
-      remove: async function(id) { return (await fetch('/api/vocabs/'+id, {method:'DELETE'})).json(); },
-      test: async function(mode, set, count) { const p = new URLSearchParams({mode, set, count}); return (await fetch('/api/test?'+p.toString())).json(); },
-      exportCSV: async function() { const r = await fetch('/api/vocabs.csv'); return await r.text(); },
-      importCSV: async function(text) { return (await fetch('/api/import', {method:'POST', headers:{'Content-Type':'text/csv'}, body: text})).json(); },
+      list: async function() { return fetchJSON('/api/vocabs'); },
+      upsert: async function(v) { return fetchJSON('/api/vocabs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v)}); },
+      remove: async function(id) { return fetchJSON('/api/vocabs/'+id, {method:'DELETE'}); },
+      test: async function(mode, set, count) { const p = new URLSearchParams({mode, set, count}); return fetchJSON('/api/test?'+p.toString()); },
+      exportCSV: async function() { const r = await fetch('/api/vocabs.csv', {cache:'no-store'}); return await r.text(); },
+      importCSV: async function(text) { return fetchJSON('/api/import', {method:'POST', headers:{'Content-Type':'text/csv'}, body: text}); },
     };
     const STUDENT_NAME = 'Advay Lokesh';
 
@@ -220,6 +263,7 @@
       };
       const res = await fetch('/api/sentences', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -248,27 +292,26 @@
     function maskWord(sentence, word) {
       const cleanWord = (word || '').trim();
       if (!sentence || !cleanWord) return sentence;
-      const lowerSentence = sentence.toLowerCase();
-      const target = cleanWord.toLowerCase();
-      if (!target.length) return sentence;
-      let result = '';
-      let i = 0;
-      while (i < sentence.length) {
-        const prevChar = i > 0 ? sentence[i - 1] : '';
-        const startsAtBoundary = !/[A-Za-z]/.test(prevChar || '');
-        if (startsAtBoundary && lowerSentence.slice(i, i + target.length) === target) {
-          let end = i + target.length;
-          while (end < sentence.length && /[A-Za-z]/.test(sentence[end])) {
-            end += 1;
-          }
-          result += '_____';
-          i = end;
-        } else {
-          result += sentence[i];
-          i += 1;
+      const escaped = escapeRegExp(cleanWord);
+      if (!escaped) return sentence;
+      const patterns = [
+        new RegExp(`\\b${escaped}\\b`, 'gi'),
+        new RegExp(`\\b${escaped}(?:'s|s)?\\b`, 'gi'),
+        new RegExp(escaped, 'gi'),
+      ];
+      for (const pattern of patterns) {
+        const replaced = sentence.replace(pattern, '_____');
+        if (replaced !== sentence) {
+          return replaced;
         }
       }
-      return result;
+      const lowerSentence = sentence.toLowerCase();
+      const target = cleanWord.toLowerCase();
+      const idx = lowerSentence.indexOf(target);
+      if (idx >= 0) {
+        return `${sentence.slice(0, idx)}_____${sentence.slice(idx + cleanWord.length)}`;
+      }
+      return sentence;
     }
 
     function insertInlineBlank(container, maskedText, datasetIndex) {
@@ -556,15 +599,21 @@
       const set = setSel ? (setSel.value || 'All') : 'All';
       const rawCount = countInput ? (+countInput.value || 20) : 20;
       const count = Math.min(50, Math.max(1, rawCount));
-      const loadingNotice = session.els.area ? document.createElement('div') : null;
+      const needsSentences = (panelKey === 'test');
+      const loadingNotice = (needsSentences && session.els.area) ? document.createElement('div') : null;
       if (loadingNotice && session.els.area) {
         loadingNotice.className = 'p-6 rounded-3xl border border-dashed text-center bg-white shadow-sm';
+        const showAnimation = panelKey === 'test';
+        const emojiRow = ['📚','🎲','🧠','✨','🚀'].map((emoji, idx)=>{
+          const classes = ['inline-flex','h-10','w-10','items-center','justify-center','text-2xl'];
+          if (showAnimation) classes.push('animate-bounce');
+          const delayAttr = showAnimation ? ` style="animation-delay:${idx * 0.1}s"` : '';
+          return `<span class="${classes.join(' ')}"${delayAttr}>${emoji}</span>`;
+        }).join('');
         loadingNotice.innerHTML = `
           <div class="flex flex-col items-center gap-3">
             <div class="grid grid-cols-5 gap-1">
-              ${['📚','🎲','🧠','✨','🚀'].map((emoji, idx)=>`
-                <span class="inline-flex h-10 w-10 items-center justify-center text-2xl animate-bounce"
-                      style="animation-delay:${idx * 0.1}s">${emoji}</span>`).join('')}
+              ${emojiRow}
             </div>
             <p class="text-sm font-semibold text-gray-600">Cooking up fresh sentences...</p>
           </div>`;
@@ -581,18 +630,22 @@
         session.score = {spell:0, def:0, fill:0};
         session.current = null;
         session.meta = {mode, set, count, startedAt: new Date()};
-        const generated = session.queue.length ? await fetchSentencesFor(session.queue) : [];
-        const filteredQueue = [];
-        const filteredSentences = [];
-        session.queue.forEach((item, idx) => {
-          const sentence = generated[idx];
-          if (sentence && sentence.trim()) {
-            filteredQueue.push(item);
-            filteredSentences.push(sentence.trim());
+        let filteredQueue = session.queue.slice();
+        let filteredSentences = filteredQueue.map(()=> '');
+        if (needsSentences) {
+          const generated = session.queue.length ? await fetchSentencesFor(session.queue) : [];
+          filteredQueue = [];
+          filteredSentences = [];
+          session.queue.forEach((item, idx) => {
+            const sentence = generated[idx];
+            if (sentence && sentence.trim()) {
+              filteredQueue.push(item);
+              filteredSentences.push(sentence.trim());
+            }
+          });
+          if (!filteredQueue.length) {
+            throw new Error('Sentence generator returned no usable sentences.');
           }
-        });
-        if (!filteredQueue.length) {
-          throw new Error('Sentence generator returned no usable sentences.');
         }
         session.queue = filteredQueue;
         session.sentences = filteredSentences;

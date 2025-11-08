@@ -50,7 +50,8 @@ def run_self_tests(app):
         r = c.post('/api/import', data=sample2, content_type='text/csv')
         assert r.status_code == 200 and r.json.get('count') == 1
         r = c.get('/api/vocabs.csv')
-        assert r.status_code == 200 and b'"Hello, world!"' in r.data
+        assert r.status_code == 200
+        assert b',Mixed,quote,' in r.data
 
         r = c.get('/api/test?mode=all&count=25')
         assert r.status_code == 200
