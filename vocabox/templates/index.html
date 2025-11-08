@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VocaBox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .card { background: #fff; border-radius: 1rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -4px rgba(0,0,0,.1); border: 1px solid #f3f4f6; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; padding: .5rem 1rem; border-radius: .75rem; font-weight: 600; transition: transform .05s ease; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: #4f46e5; color: #fff; }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-ghost { background: #f3f4f6; }
+    .btn-ghost:hover { background: #e5e7eb; }
+    .tab { padding: .5rem 1rem; border-radius: .75rem; cursor: pointer; }
+    .tab-active { background: #4f46e5; color: #fff; }
+    .kbd { padding: .25rem .5rem; border-radius: .375rem; background: #f3f4f6; border: 1px solid #d1d5db; font-size: .875rem; }
+  </style>
+</head>
+<body class="bg-gradient-to-b from-indigo-50 to-white min-h-screen">
+  <header class="max-w-6xl mx-auto px-4 pt-10 pb-6">
+    <div class="flex items-center gap-3">
+      <div class="h-12 w-12 rounded-2xl bg-indigo-600 text-white grid place-items-center text-2xl font-black">V</div>
+      <div>
+        <h1 class="text-3xl font-black text-gray-900">VocaBox</h1>
+        <p class="text-gray-600">Learn • Practice • Shine — classroom vocab made fun</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 pb-24">
+    <div class="flex flex-wrap gap-2 mb-6">
+      <button id="tab-learn" class="tab tab-active">Learning Mode</button>
+      <button id="tab-practice" class="tab">Practice Mode</button>
+      <button id="tab-test" class="tab">Test Mode</button>
+      <button id="tab-manage" class="tab">Manage Words</button>
+    </div>
+
+    <!-- Learn -->
+    <section id="panel-learn" class="card p-6">
+      <div class="flex flex-col md:flex-row gap-4 md:items-end">
+        <div class="flex-1">
+          <label class="block text-sm font-semibold text-gray-700">Choose Set</label>
+          <select id="learn-set" class="w-full mt-1 p-3 rounded-xl border border-gray-300"></select>
+        </div>
+        <div class="flex gap-2">
+          <button id="learn-shuffle" class="btn btn-ghost">Shuffle</button>
+        </div>
+      </div>
+
+      <div id="learn-cards" class="grid md:grid-cols-2 gap-4 mt-6"></div>
+    </section>
+
+    <!-- Practice -->
+    <section id="panel-practice" class="card p-6 hidden">
+      <div class="border border-indigo-100 bg-indigo-50/70 rounded-2xl p-4 space-y-4">
+        <div class="grid md:grid-cols-4 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-semibold text-gray-700">Mode</label>
+            <select id="practice-mode" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200">
+              <option value="set">Practice a specific set</option>
+              <option value="all">Practice from all sets</option>
+            </select>
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-sm font-semibold text-gray-700">Set</label>
+            <select id="practice-set" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200"></select>
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-sm font-semibold text-gray-700"># Words</label>
+            <input id="practice-count" type="number" min="1" max="50" value="20" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200" />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <button id="practice-start" class="btn btn-primary shadow-sm">Start Practice</button>
+          <div class="flex items-center gap-2 text-sm text-indigo-800 bg-white/80 border border-white rounded-full px-3 py-1 shadow-sm">
+            <span class="text-lg">💡</span>
+            <span>Press the space bar anytime to replay the current word.</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="practice-area" class="mt-6"></div>
+      <div id="practice-summary" class="mt-6 hidden"></div>
+    </section>
+
+    <!-- Test -->
+    <section id="panel-test" class="card p-6 hidden">
+      <div class="border border-indigo-100 bg-indigo-50/70 rounded-2xl p-4 space-y-4">
+        <div class="grid md:grid-cols-4 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-semibold text-gray-700">Mode</label>
+            <select id="test-mode" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200">
+              <option value="set">Test a specific set</option>
+              <option value="all">Test from all sets</option>
+            </select>
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-sm font-semibold text-gray-700">Set</label>
+            <select id="test-set" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200"></select>
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-sm font-semibold text-gray-700"># Words</label>
+            <input id="test-count" type="number" min="1" max="50" value="20" class="w-full mt-1 p-3 rounded-xl border border-gray-200 focus:border-indigo-400 focus:ring-indigo-200" />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <button id="test-start" class="btn btn-primary shadow-sm">Start Test</button>
+          <div class="flex items-center gap-2 text-sm text-indigo-800 bg-white/80 border border-white rounded-full px-3 py-1 shadow-sm">
+            <span class="text-lg">⏱️</span>
+            <span>Stay focused—no hints during Test Mode!</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="test-area" class="mt-6"></div>
+      <div id="test-summary" class="mt-6 hidden"></div>
+    </section>
+
+    <!-- Manage -->
+    <section id="panel-manage" class="card p-6 hidden">
+      <div class="flex flex-wrap items-end gap-4">
+        <div class="flex-1">
+          <label class="block text-sm font-semibold text-gray-700">Filter by Set</label>
+          <select id="manage-filter-set" class="w-full mt-1 p-3 rounded-xl border border-gray-300"></select>
+        </div>
+        <div class="">
+          <button id="new-word" class="btn btn-primary">＋ New Word</button>
+        </div>
+      </div>
+
+      <div id="manage-table" class="overflow-x-auto mt-6"></div>
+    </section>
+  </main>
+
+  <template id="tpl-learn-card">
+    <div class="p-5 rounded-2xl border bg-white shadow-sm">
+      <h3 class="text-2xl font-black flex items-center gap-3">
+        <span class="word"></span>
+        <button class="say" title="Play pronunciation">🔊</button>
+      </h3>
+      <div class="mt-3 text-gray-700"><span class="font-semibold">Definition:</span> <span class="def"></span></div>
+    </div>
+  </template>
+
+  <template id="tpl-manage-row">
+    <tr>
+      <td class="p-2"><input class="inp-set w-36 p-2 rounded border"></td>
+      <td class="p-2"><input class="inp-word w-44 p-2 rounded border"></td>
+      <td class="p-2"><input class="inp-def w-96 p-2 rounded border"></td>
+      <td class="p-2">
+        <div class="flex gap-2">
+          <button type="button" class="save btn btn-primary">Save</button>
+          <button type="button" class="del btn btn-ghost">Delete</button>
+        </div>
+      </td>
+    </tr>
+  </template>
+
+  <script>
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+    const api = {
+      list: async function() { return (await fetch('/api/vocabs')).json(); },
+      upsert: async function(v) { return (await fetch('/api/vocabs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(v)})).json(); },
+      remove: async function(id) { return (await fetch('/api/vocabs/'+id, {method:'DELETE'})).json(); },
+      test: async function(mode, set, count) { const p = new URLSearchParams({mode, set, count}); return (await fetch('/api/test?'+p.toString())).json(); },
+      exportCSV: async function() { const r = await fetch('/api/vocabs.csv'); return await r.text(); },
+      importCSV: async function(text) { return (await fetch('/api/import', {method:'POST', headers:{'Content-Type':'text/csv'}, body: text})).json(); },
+    };
+    const STUDENT_NAME = 'Advay Lokesh';
+
+    // Speech: use Web Speech API
+    let voices = [];
+    function refreshVoices() {
+      voices = speechSynthesis.getVoices();
+      if (!voices.length) {
+        speechSynthesis.onvoiceschanged = refreshVoices;
+      }
+    }
+    refreshVoices();
+
+    function pickSoftVoice() {
+      if (!voices.length) return null;
+      const preferred = ['Samantha','Victoria','Karen','Fiona','Ava','Serena','Zira','Allison'];
+      for (const name of preferred) {
+        const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+        if (match) return match;
+      }
+      const gentle = voices.find(v => /female|woman|soft/i.test(v.name));
+      return gentle || voices[0];
+    }
+
+    function speak(text) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.9; u.pitch = 1.05; u.lang = navigator.language || 'en-US';
+      const voice = pickSoftVoice();
+      if (voice) u.voice = voice;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+
+    let all = [];
+    let setChoices = ['All'];
+    let manageBody = null;
+    const sentenceContexts = [
+      'science lab experiment',
+      'history debate',
+      'robotics club build session',
+      'student council meeting',
+      'creative writing workshop',
+      'community service plan',
+      'mathletes strategy huddle',
+      'field trip journal recap',
+      'coding challenge showcase',
+      'environmental club rally'
+    ];
+
+    const sentenceSpeakers = [
+      'our teacher Ms. Patel',
+      'Coach Rivera',
+      'my lab partner Jordan',
+      'the principal',
+      'student council president Leo',
+      'my best friend Amara',
+      'the librarian',
+      'our guest scientist',
+      'my debate teammate Priya'
+    ];
+
+    const sentenceReactions = [
+      'everyone finally nodded in understanding',
+      'the judges gave approving smiles',
+      'the class scribbled the definition into their notebooks',
+      'the room fell quiet so we could hear every detail',
+      'even the eighth graders leaned in to listen',
+      'it helped our team lock in the right answer',
+      'the idea board suddenly made sense',
+      'we all added it to our vocab flash cards'
+    ];
+
+    const sentenceTemplates = [
+      'During the {context}, {speaker} used the word {word} to clarify that it means {definition}, and {reaction}.',
+      '{speaker} whispered {word} to me in the middle of our {context} so I\\'d remember it describes {definition}.',
+      'Right before the {context} deadline, I explained {definition} by saying {word}, and {reaction}.',
+      'While the {context} heated up, we paused to note that {word} is the term for {definition}.',
+      'Our {context} presentation sounded sharper once we defined {word} as {definition}.',
+      'I highlighted {word} in my notebook because it captures {definition}, which made {reaction}.'
+    ];
+
+    function choose(list) {
+      if (!Array.isArray(list) || !list.length) return '';
+      return list[Math.floor(Math.random()*list.length)];
+    }
+
+    function describeDefinition(definition) {
+      const fallback = 'something important we wanted to describe';
+      const raw = (definition || '').trim();
+      if (!raw) return fallback;
+      const withoutPeriod = raw.replace(/[.]+$/, '');
+      return withoutPeriod[0].toLowerCase() + withoutPeriod.slice(1);
+    }
+
+    function craftSentence(word, definition) {
+      const tmpl = choose(sentenceTemplates);
+      const context = choose(sentenceContexts);
+      const speaker = choose(sentenceSpeakers);
+      const reaction = choose(sentenceReactions);
+      return tmpl
+        .replace(/{word}/g, word || 'the word')
+        .replace(/{definition}/g, describeDefinition(definition))
+        .replace(/{context}/g, context)
+        .replace(/{speaker}/g, speaker)
+        .replace(/{reaction}/g, reaction);
+    }
+
+    async function fetchDynamicSentences(items) {
+      try {
+        const res = await fetch('/api/sentences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items }),
+        });
+        if (!res.ok) throw new Error('Failed to fetch sentences');
+        const data = await res.json();
+        if (Array.isArray(data.sentences) && data.sentences.length === items.length) {
+          return data.sentences.map(s => (s || '').trim());
+        }
+      } catch (err) {
+        console.error('Dynamic sentence fetch failed', err);
+      }
+      return items.map(item => craftSentence(item.word || '', item.definition || ''));
+    }
+
+    function maskWord(sentence, word) {
+      if (!sentence || !word) return sentence;
+      const lowerSentence = sentence.toLowerCase();
+      const target = (word || '').toLowerCase();
+      if (!target.length) return sentence;
+      let result = '';
+      let i = 0;
+      while (i < sentence.length) {
+        if (lowerSentence.slice(i, i + target.length) === target) {
+          result += '_____';
+          i += target.length;
+        } else {
+          result += sentence[i];
+          i += 1;
+        }
+      }
+      return result;
+    }
+
+    function insertInlineBlank(container, maskedText, datasetIndex) {
+      const token = '_____';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.dataset.index = String(datasetIndex);
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.className = 'fill-inp border-b-2 border-dashed border-indigo-400 bg-transparent px-2 py-1 text-lg font-semibold focus:outline-none focus:border-indigo-600';
+      input.placeholder = 'word';
+      const idx = maskedText.indexOf(token);
+      if (idx >= 0) {
+        container.appendChild(document.createTextNode(maskedText.slice(0, idx)));
+        container.appendChild(input);
+        container.appendChild(document.createTextNode(maskedText.slice(idx + token.length)));
+      } else {
+        container.appendChild(document.createTextNode(maskedText + ' '));
+        container.appendChild(input);
+      }
+      return input;
+    }
+
+    const sessionKeys = ['practice','test'];
+    const sessions = {};
+
+    function initSessions() {
+      sessionKeys.forEach(key => {
+        sessions[key] = {
+          key,
+          label: key === 'practice' ? 'Practice' : 'Test',
+        components: key === 'practice' ? ['spell','def'] : ['fill'],
+        queue: [],
+        index: 0,
+        score: {spell:0, def:0, fill:0},
+        current: null,
+        meta: {mode:'set', set:'All', count:0, startedAt:null},
+        wordBank: [],
+        sentences: [],
+        displayOrder: [],
+        els: {
+            modeSel: document.getElementById(`${key}-mode`),
+            setSel: document.getElementById(`${key}-set`),
+            countInput: document.getElementById(`${key}-count`),
+            startBtn: document.getElementById(`${key}-start`),
+            area: document.getElementById(`${key}-area`),
+            summary: document.getElementById(`${key}-summary`),
+          },
+        };
+      });
+    }
+
+    function distinctSets(words) {
+      const s = new Set(words.map(w => w.set).filter(Boolean));
+      return ['All', ...Array.from(s)];
+    }
+
+    function populateSets(words = all, prev = {}) {
+      const sets = distinctSets(words);
+      setChoices = sets;
+      const defaultValue = sets.includes('All') ? 'All' : (sets[0] || '');
+      const fill = (sel, saved) => {
+        const el = $(sel);
+        if (!el) return;
+        el.innerHTML = sets.map(x=>`<option value="${x}">${x}</option>`).join('');
+        const target = (saved && sets.includes(saved)) ? saved : defaultValue;
+        if (target) { el.value = target; }
+      };
+      fill('#learn-set', prev.learn);
+      fill('#manage-filter-set', prev.manage);
+      syncPanelSetOptions('practice', prev.practice);
+      syncPanelSetOptions('test', prev.test);
+    }
+
+    function cardsFor(words) {
+      const host = $('#learn-cards'); host.innerHTML='';
+      const tpl = $('#tpl-learn-card');
+      words.forEach(w => {
+        const node = tpl.content.cloneNode(true);
+        $('.word', node).textContent = w.word;
+        $('.def', node).textContent = w.definition;
+        $('.say', node).addEventListener('click', ()=> speak(w.word));
+        host.appendChild(node);
+      });
+    }
+
+    function filterBySet(setName, words = all) {
+      if (!setName || setName==='All') return words;
+      return words.filter(w => (w.set||'') === setName);
+    }
+
+    function captureSelectValues() {
+      const learnSel = $('#learn-set');
+      const practiceSel = $('#practice-set');
+      const testSel = $('#test-set');
+      const manageSel = $('#manage-filter-set');
+      const pick = (el) => (el && el.value) ? el.value : 'All';
+      return {
+        learn: pick(learnSel),
+        practice: pick(practiceSel),
+        test: pick(testSel),
+        manage: pick(manageSel),
+      };
+    }
+
+    function syncPanelSetOptions(panelKey, savedValue) {
+      const session = sessions[panelKey];
+      if (!session) return;
+      const select = session.els.setSel;
+      const modeSel = session.els.modeSel;
+      if (!select || !modeSel) return;
+      const mode = modeSel.value || 'set';
+      let options = [];
+      if (mode === 'all') {
+        options = ['All'];
+      } else {
+        options = setChoices.filter(x => x !== 'All');
+        if (!options.length) { options = ['All']; }
+      }
+      select.innerHTML = options.map(x=>`<option value="${x}">${x}</option>`).join('');
+      const target = (savedValue && options.includes(savedValue)) ? savedValue : (options[0] || 'All');
+      if (target) { select.value = target; }
+      select.disabled = (mode === 'all');
+    }
+
+    function createManageRow(word, {isNew=false}={}) {
+      const tpl = $('#tpl-manage-row');
+      if (!tpl) return document.createElement('tr');
+      const fragment = tpl.content.cloneNode(true);
+      const row = fragment.querySelector('tr');
+      if (!row) return document.createElement('tr');
+      row.dataset.mode = isNew ? 'new' : 'existing';
+
+      const setInput = row.querySelector('.inp-set');
+      const wordInput = row.querySelector('.inp-word');
+      const defInput = row.querySelector('.inp-def');
+      const saveBtn = row.querySelector('.save');
+      const delBtn = row.querySelector('.del');
+      if (!setInput || !wordInput || !defInput || !saveBtn || !delBtn) {
+        return row;
+      }
+
+      const idValue = word.id || '';
+
+      setInput.value = word.set || '';
+      wordInput.value = word.word || '';
+      defInput.value = word.definition || '';
+
+      saveBtn.textContent = isNew ? 'Add' : 'Save';
+      delBtn.textContent = isNew ? 'Cancel' : 'Delete';
+
+      saveBtn.addEventListener('click', async (evt)=>{
+        evt.preventDefault();
+        const payload = {
+          id: idValue,
+          set: setInput.value.trim(),
+          word: wordInput.value.trim(),
+          definition: defInput.value.trim(),
+        };
+        if (isNew && (!payload.set || !payload.word || !payload.definition)) {
+          alert('Please fill in Set, Word, and Definition before saving.');
+          (setInput.value ? (wordInput.value ? defInput : wordInput) : setInput).focus();
+          return;
+        }
+        const currentManage = $('#manage-filter-set') ? $('#manage-filter-set').value : 'All';
+        saveBtn.disabled = true;
+        saveBtn.textContent = isNew ? 'Saving...' : 'Saving...';
+        try {
+          const res = await api.upsert(payload);
+          if (!res || res.ok !== true) {
+            throw new Error('Save failed');
+          }
+          const targetSet = payload.set || currentManage;
+          await refreshAll({ manageSet: targetSet });
+        } catch (err) {
+          console.error('Failed to save word', err);
+          alert('Could not save the word. Please try again.');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = isNew ? 'Add' : 'Save';
+        }
+      });
+
+      if (isNew) {
+        delBtn.addEventListener('click', (evt)=>{
+          evt.preventDefault();
+          row.remove();
+        });
+      } else {
+        delBtn.addEventListener('click', async (evt)=>{
+          evt.preventDefault();
+          if (!confirm(`Delete word "${word.word}"?`)) return;
+          delBtn.disabled = true;
+          try {
+            await api.remove(idValue);
+            await refreshAll({ manageSet: $('#manage-filter-set') ? $('#manage-filter-set').value : 'All' });
+          } catch (err) {
+            console.error('Failed to delete word', err);
+            alert('Could not delete the word. Please try again.');
+          } finally {
+            delBtn.disabled = false;
+          }
+        });
+      }
+
+      return row;
+    }
+
+    // Manage table
+    function renderManageTable(words) {
+      const host = $('#manage-table');
+      host.innerHTML = `
+        <table class="min-w-full text-sm">
+          <thead class="text-left text-gray-600">
+            <tr>
+              <th class="p-2">Set</th>
+              <th class="p-2">Word</th>
+              <th class="p-2">Definition</th>
+              <th class="p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>`;
+      manageBody = $('tbody', host);
+      words.forEach(w => {
+        manageBody.appendChild(createManageRow(w));
+      });
+    }
+
+    async function refreshAll(opts = {}) {
+      const prevSelections = captureSelectValues();
+      if (opts.learnSet) prevSelections.learn = opts.learnSet;
+      if (opts.practiceSet) prevSelections.practice = opts.practiceSet;
+      if (opts.testSet) prevSelections.test = opts.testSet;
+      if (opts.manageSet) prevSelections.manage = opts.manageSet;
+
+      all = await api.list();
+      populateSets(all, prevSelections);
+      const learnSel = $('#learn-set');
+      const manageSel = $('#manage-filter-set');
+      const currentLearn = learnSel ? learnSel.value : 'All';
+      const currentManage = manageSel ? manageSel.value : 'All';
+      cardsFor(filterBySet(currentLearn));
+      renderManageTable(filterBySet(currentManage));
+    }
+
+    // Practice/Test session engine
+    let activeSessionKey = null;
+
+    function pickRandom(arr, n) { return arr.slice().sort(()=>Math.random()-0.5).slice(0, n); }
+
+    function buildMCQ(options, correctText) {
+      const unique = Array.from(new Set(options.filter(Boolean)));
+      const shuffled = pickRandom(unique, Math.min(4, unique.length));
+      if (!shuffled.includes(correctText)) { shuffled[Math.floor(Math.random()*Math.max(1,shuffled.length))] = correctText; }
+      return shuffled;
+    }
+
+    function totalEarned(session) {
+      return (session.components || []).reduce((sum, name)=> sum + (session.score[name] || 0), 0);
+    }
+
+    window.onkeydown = (e)=>{
+      if (e.code === 'Space' && activeSessionKey) {
+        const session = sessions[activeSessionKey];
+        if (session && session.current) {
+          e.preventDefault();
+          speak(session.current.word);
+        }
+      }
+    };
+
+    async function startSession(panelKey) {
+      const session = sessions[panelKey];
+      if (!session || !session.els) return;
+      const modeSel = session.els.modeSel;
+      const setSel = session.els.setSel;
+      const countInput = session.els.countInput;
+      const triggerBtn = session.els.startBtn;
+      const mode = modeSel ? (modeSel.value || 'set') : 'set';
+      const set = setSel ? (setSel.value || 'All') : 'All';
+      const rawCount = countInput ? (+countInput.value || 20) : 20;
+      const count = Math.min(50, Math.max(1, rawCount));
+      try {
+        if (triggerBtn) triggerBtn.disabled = true;
+        const res = await api.test(mode, set, count);
+        session.queue = res.items || [];
+        session.index = 0;
+        session.score = {spell:0, def:0, fill:0};
+        session.current = null;
+        session.meta = {mode, set, count, startedAt: new Date()};
+        session.wordBank = Array.from(new Set(session.queue.map(item => item.word).filter(Boolean)));
+        if (panelKey === 'test' && session.queue.length) {
+          session.sentences = await fetchDynamicSentences(session.queue);
+        } else {
+          session.sentences = session.queue.map(item => craftSentence(item.word || 'word', item.definition || 'something interesting'));
+        }
+        session.displayOrder = [];
+        if (session.els.summary) session.els.summary.classList.add('hidden');
+        if (session.els.area) session.els.area.innerHTML = '';
+        renderSessionItem(panelKey);
+      } catch (err) {
+        console.error('Failed to start session', err);
+        alert('Could not start the session. Please try again.');
+      } finally {
+        if (triggerBtn) triggerBtn.disabled = false;
+      }
+    }
+
+    function renderSessionItem(panelKey) {
+      const session = sessions[panelKey];
+      if (!session || !session.els.area) return;
+      const host = session.els.area;
+      host.innerHTML = '';
+      session.current = session.queue[session.index] || null;
+      const hasWords = (session.queue && session.queue.length);
+      if (!hasWords) {
+        host.innerHTML = '<div class="p-4 rounded-2xl border border-dashed text-center text-gray-500">No words found yet. Try picking a different set.</div>';
+        activeSessionKey = null;
+        return;
+      }
+
+      if (panelKey === 'practice') {
+        activeSessionKey = panelKey;
+        renderPracticeItem(session);
+      } else {
+        activeSessionKey = null;
+        renderTestFillAll(session);
+      }
+    }
+
+    function renderPracticeItem(session) {
+      const host = session.els.area;
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between';
+      const totalScore = totalEarned(session);
+      header.innerHTML = `<div class="text-sm text-gray-600">Question ${session.index+1} / ${session.queue.length}</div>
+                          <div class="text-sm">Score: <span class="session-score">${totalScore}</span></div>`;
+      host.appendChild(header);
+
+      const defs = buildMCQ(all.map(x=>x.definition), session.current.definition);
+      const groupName = `def-${session.key}-${session.index}`;
+      const card = document.createElement('div');
+      card.className = 'p-5 rounded-2xl border bg-white shadow-sm mt-3 space-y-6';
+      card.innerHTML = `
+        <div>
+          <div class="flex justify-between items-center">
+            <h3 class="font-bold">Spell the word you hear</h3>
+            <button class="btn btn-ghost say-word">🔊 Play</button>
+          </div>
+          <input class="w-full mt-3 p-3 rounded-xl border spell-inp" placeholder="Type spelling"/>
+          <div class="text-sm mt-2 spell-fb"></div>
+        </div>
+        <div>
+          <div class="mt-3 grid gap-2">${defs.map(d=>`<label class="flex gap-2 items-start"><input type="radio" name="${groupName}" value="${(d||'').replaceAll('"','&quot;')}"/> <span>${d}</span></label>`).join('')}</div>
+          <div class="text-sm mt-2 def-fb"></div>
+        </div>`;
+      host.appendChild(card);
+
+      const actions = document.createElement('div');
+      actions.className = 'mt-4 flex gap-2';
+      actions.innerHTML = `<button class="btn btn-primary btn-check">Check Answers</button>
+                           <button class="btn btn-ghost btn-next">Next</button>`;
+      host.appendChild(actions);
+
+      const sayBtn = card.querySelector('.say-word');
+      if (sayBtn) sayBtn.addEventListener('click', ()=> speak(session.current.word));
+      const spellInput = card.querySelector('.spell-inp');
+      const spellFb = card.querySelector('.spell-fb');
+      const defFb = card.querySelector('.def-fb');
+      const scoreEl = header.querySelector('.session-score');
+
+      let checked = false;
+      const evaluate = ()=>{
+        if (checked) return;
+        checked = true;
+        const spell = (spellInput && spellInput.value ? spellInput.value : '').trim().toLowerCase();
+        const ok1 = spell === (session.current.word||'').toLowerCase();
+        if (spellFb) {
+          spellFb.textContent = ok1 ? '✅ Correct' : `❌ It was "${session.current.word}"`;
+          spellFb.className = 'text-sm mt-2 ' + (ok1?'text-green-600':'text-rose-600');
+        }
+        if (ok1) { session.score.spell++; }
+
+        const choice = host.querySelector(`input[name="${groupName}"]:checked`);
+        const selDef = choice ? choice.value : '';
+        const ok2 = selDef === session.current.definition;
+        if (defFb) {
+          defFb.textContent = ok2 ? '✅ Correct' : '❌ Incorrect';
+          defFb.className = 'text-sm mt-2 ' + (ok2?'text-green-600':'text-rose-600');
+        }
+        if (ok2) { session.score.def++; }
+
+        if (scoreEl) scoreEl.textContent = session.score.spell + session.score.def;
+      };
+
+      const checkBtn = actions.querySelector('.btn-check');
+      const nextBtn = actions.querySelector('.btn-next');
+      if (checkBtn) checkBtn.addEventListener('click', evaluate);
+      if (nextBtn) {
+        nextBtn.addEventListener('click', ()=>{
+          evaluate();
+          session.index++;
+          if (session.index >= session.queue.length) {
+            renderSessionSummary(session.key);
+          } else {
+            renderSessionItem(session.key);
+          }
+        });
+      }
+    }
+
+    function renderTestFillAll(session) {
+      const host = session.els.area;
+      const totalItems = session.queue.length;
+      const wordBankOrder = pickRandom(session.wordBank, session.wordBank.length);
+      if (!session.displayOrder || session.displayOrder.length !== totalItems) {
+        session.displayOrder = session.queue.map((_, idx)=>idx).sort(()=>Math.random()-0.5);
+      }
+
+      const header = document.createElement('div');
+      header.className = 'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between';
+      header.innerHTML = `<div>
+                            <p class="text-sm font-semibold text-gray-700">Sentence Challenge</p>
+                            <p class="text-xs text-gray-500">Fill every blank using the word bank below.</p>
+                          </div>
+                          <div class="text-sm text-gray-600">Total Sentences: ${totalItems}</div>`;
+      host.appendChild(header);
+
+      const wordBank = document.createElement('div');
+      wordBank.className = 'mt-4';
+      wordBank.innerHTML = `
+        <p class="text-sm font-semibold text-gray-700">Word Bank</p>
+        <div class="mt-2 flex flex-wrap gap-2">${wordBankOrder.map(w=>`<span class="px-3 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-sm font-semibold text-indigo-700">${w}</span>`).join('')}</div>`;
+      host.appendChild(wordBank);
+
+      const list = document.createElement('div');
+      list.className = 'mt-6 space-y-4';
+      session.displayOrder.forEach((qIdx, displayIdx)=>{
+        const row = session.queue[qIdx] || {};
+        const word = row.word || '';
+        const sentence = session.sentences[qIdx] || craftSentence(word, row.definition || '');
+        const masked = maskWord(sentence, word);
+        const card = document.createElement('div');
+        card.className = 'p-5 rounded-2xl border bg-white shadow-sm fill-card';
+        card.dataset.index = String(qIdx);
+        card.innerHTML = `
+          <p class="text-sm font-semibold text-gray-500">Sentence ${displayIdx+1}</p>
+          <div class="sentence mt-2 text-lg text-gray-800 leading-relaxed"></div>
+          <p class="text-xs text-gray-500 mt-3">Tap the blank directly to type your answer.</p>
+          <div class="text-sm mt-2 fill-fb"></div>`;
+        list.appendChild(card);
+        const sentenceEl = card.querySelector('.sentence');
+        if (sentenceEl) {
+          const input = insertInlineBlank(sentenceEl, masked, qIdx);
+          if (input && !input.dataset.answer) {
+            input.dataset.answer = word;
+          }
+        }
+      });
+      host.appendChild(list);
+
+      const actions = document.createElement('div');
+      actions.className = 'mt-6 flex flex-wrap gap-2';
+      actions.innerHTML = `<button class="btn btn-primary btn-check">Submit Test</button>
+                           <button class="btn btn-ghost btn-reset">Clear Answers</button>`;
+      host.appendChild(actions);
+
+      const checkBtn = actions.querySelector('.btn-check');
+      const resetBtn = actions.querySelector('.btn-reset');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', ()=>{
+          list.querySelectorAll('.fill-inp').forEach(inp => { inp.value = ''; });
+          list.querySelectorAll('.fill-fb').forEach(fb => { fb.textContent=''; fb.className = 'text-sm mt-2 fill-fb'; });
+        });
+      }
+
+      if (checkBtn) {
+        checkBtn.addEventListener('click', ()=>{
+          let correct = 0;
+          list.querySelectorAll('.fill-card').forEach(card=>{
+            const idx = +card.dataset.index;
+            const word = (session.queue[idx] && session.queue[idx].word) || '';
+            const input = card.querySelector('.fill-inp');
+            const fb = card.querySelector('.fill-fb');
+            const guess = (input && input.value ? input.value : '').trim().toLowerCase();
+            const ok = guess === word.toLowerCase();
+            if (fb) {
+              fb.textContent = ok ? '✅ Great choice!' : `❌ The missing word was "${word}"`;
+              fb.className = 'text-sm mt-2 fill-fb ' + (ok?'text-green-600':'text-rose-600');
+            }
+            if (ok) correct++;
+          });
+          session.score.fill = correct;
+          session.index = session.queue.length;
+          renderSessionSummary(session.key);
+        });
+      }
+    }
+
+    function renderSessionSummary(panelKey) {
+      const session = sessions[panelKey];
+      if (!session || !session.els.summary || !session.els.area) return;
+      session.els.area.innerHTML = '';
+      const sum = session.els.summary;
+      sum.classList.remove('hidden');
+      const perQuestion = session.components.length || 1;
+      const totalQs = (session.queue.length || 0) * perQuestion;
+      const got = session.components.reduce((sum, name)=> sum + (session.score[name] || 0), 0);
+      const pct = totalQs ? Math.round(100 * got / totalQs) : 0;
+      const wordsPracticed = session.queue.length || 0;
+      const modeLabel = session.meta.mode === 'all' ? 'All Sets' : (session.meta.set || 'Selected Set');
+      const attemptDate = session.meta.startedAt ? new Date(session.meta.startedAt) : new Date();
+      const formattedDate = attemptDate.toLocaleDateString(undefined, {month:'long', day:'numeric', year:'numeric'});
+      const encouragement = session.label.toLowerCase();
+      const wordAction = session.label === 'Test' ? 'tested' : 'practiced';
+      const detailCards = session.components.map(name=>{
+        if (name === 'spell') {
+          return `<div class="rounded-2xl bg-white/90 border border-indigo-100 p-5 shadow-sm flex flex-col justify-between">
+                    <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Spelling Mastery</p>
+                    <p class="mt-3 text-3xl font-black text-indigo-600">${session.score.spell}</p>
+                    <p class="text-sm text-gray-500">out of ${wordsPracticed} words</p>
+                  </div>`;
+        }
+        if (name === 'def') {
+          return `<div class="rounded-2xl bg-white/90 border border-emerald-100 p-5 shadow-sm flex flex-col justify-between">
+                    <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Definition Guru</p>
+                    <p class="mt-3 text-3xl font-black text-emerald-600">${session.score.def}</p>
+                    <p class="text-sm text-gray-500">out of ${wordsPracticed} clues</p>
+                  </div>`;
+        }
+        return `<div class="rounded-2xl bg-white/90 border border-purple-100 p-5 shadow-sm flex flex-col justify-between">
+                  <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Sentence Hero</p>
+                  <p class="mt-3 text-3xl font-black text-purple-600">${session.score.fill}</p>
+                  <p class="text-sm text-gray-500">blanks solved</p>
+                </div>`;
+      }).join('');
+      const totalStatCards = session.components.length + 1;
+      const statCols = totalStatCards >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
+      sum.innerHTML = `
+        <div class="relative overflow-hidden rounded-[32px] border-[6px] border-amber-200 bg-gradient-to-br from-amber-50 via-white to-indigo-50 shadow-2xl px-6 py-10 sm:px-12">
+          <div class="absolute inset-0 pointer-events-none">
+            <div class="absolute -top-10 -left-10 h-44 w-44 rounded-full bg-amber-200 opacity-40 blur-3xl"></div>
+            <div class="absolute -bottom-12 -right-6 h-48 w-48 rounded-full bg-indigo-200 opacity-30 blur-3xl"></div>
+            <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,.35),_transparent_55%)]"></div>
+          </div>
+          <div class="relative flex flex-col items-center text-center space-y-4">
+            <span class="tracking-[0.35em] text-xs font-semibold uppercase text-amber-500">Certificate of Achievement</span>
+            <h3 class="text-3xl sm:text-5xl font-black text-gray-900">Congratulations, ${STUDENT_NAME}!</h3>
+            <p class="text-gray-600 text-lg max-w-2xl">This certifies that <span class="font-semibold text-gray-900">${STUDENT_NAME}</span> completed the <span class="font-semibold text-indigo-600">${modeLabel}</span> vocabulary challenge and dazzled us with a <span class="font-semibold text-gray-900">${pct}%</span> mastery score.</p>
+            <div class="inline-flex items-center gap-2 px-5 py-2 rounded-full border border-amber-200 bg-white/80 text-amber-600 text-sm font-semibold shadow-sm">
+              <span>🎉</span>
+              <span>Hooray! Keep shining bright.</span>
+            </div>
+          </div>
+          <div class="relative mt-10 grid gap-4 ${statCols}">
+            <div class="rounded-2xl bg-white/90 border border-amber-100 p-5 shadow-sm">
+              <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Overall Score</p>
+              <p class="mt-3 text-4xl font-black text-gray-900">${pct}%</p>
+              <p class="text-sm text-gray-500">${got} of ${totalQs} stars</p>
+            </div>
+            ${detailCards}
+          </div>
+          <div class="relative mt-8 grid gap-4 sm:grid-cols-2">
+            <div class="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-sm">
+              <p class="text-sm text-gray-500">Challenge Mode</p>
+              <p class="text-xl font-semibold text-gray-800">${modeLabel}</p>
+              <p class="text-sm text-gray-500 mt-2">Words ${wordAction}: ${wordsPracticed}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-sm">
+              <p class="text-sm text-gray-500">Presented On</p>
+              <p class="text-xl font-semibold text-gray-800">${formattedDate}</p>
+              <p class="text-sm text-gray-500 mt-2">Requested ${session.meta.count} words</p>
+            </div>
+          </div>
+          <div class="relative mt-10 flex flex-col items-center gap-3 text-center">
+            <div>
+              <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Signed</p>
+              <p class="text-lg font-semibold text-gray-700">VocaBox Coach</p>
+            </div>
+            <p class="text-sm text-gray-500">Start another ${encouragement} anytime by choosing sets above—keep the momentum going!</p>
+          </div>
+        </div>`;
+      activeSessionKey = null;
+    }
+
+    function showSection(id) {
+      ['learn','practice','test','manage'].forEach(n=>{
+        const panel = $('#panel-'+n);
+        const tabBtn = $('#tab-'+n);
+        if (panel) panel.classList.toggle('hidden', n !== id);
+        if (tabBtn) tabBtn.classList.toggle('tab-active', n === id);
+      });
+    }
+
+    async function boot() {
+      initSessions();
+
+      // Tabs
+      const tabHandlers = {
+        'tab-learn': 'learn',
+        'tab-practice': 'practice',
+        'tab-test': 'test',
+        'tab-manage': 'manage',
+      };
+      Object.entries(tabHandlers).forEach(([btnId, target])=>{
+        const btn = document.getElementById(btnId);
+        if (btn) btn.onclick = ()=> showSection(target);
+      });
+      showSection('learn');
+
+      $('#learn-set').onchange = ()=> cardsFor(filterBySet($('#learn-set').value));
+      $('#learn-shuffle').onclick = ()=> { all = all.sort(()=>Math.random()-0.5); cardsFor(filterBySet($('#learn-set').value)); };
+
+      sessionKeys.forEach(key=>{
+        const session = sessions[key];
+        if (!session) return;
+        if (session.els.modeSel) {
+          session.els.modeSel.onchange = ()=> syncPanelSetOptions(key, session.els.setSel ? session.els.setSel.value : 'All');
+        }
+        if (session.els.startBtn) {
+          session.els.startBtn.onclick = ()=> startSession(key);
+        }
+      });
+
+      $('#manage-filter-set').onchange = ()=> renderManageTable(filterBySet($('#manage-filter-set').value));
+      $('#new-word').onclick = ()=>{
+        if (!manageBody) return;
+        if (manageBody.querySelector('tr[data-mode="new"]')) {
+          const focusTarget = manageBody.querySelector('tr[data-mode="new"] .inp-set');
+          if (focusTarget) focusTarget.focus();
+          return;
+        }
+        const row = createManageRow({id:'', set:'', word:'', definition:''}, {isNew:true});
+        manageBody.prepend(row);
+        const firstInput = row.querySelector('input');
+        if (firstInput) firstInput.focus();
+      };
+
+      try {
+        await refreshAll();
+      } catch (err) {
+        console.error('Failed to load vocabulary sets', err);
+        const fallback = $('#learn-cards');
+        if (fallback && !fallback.innerHTML.trim()) {
+          fallback.innerHTML = '<div class="p-4 rounded-2xl border border-dashed text-center text-gray-500">Unable to load words right now. You can still switch tabs and try again shortly.</div>';
+        }
+      }
+
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', boot);
+    } else {
+      boot();
+    }
+  </script>
+</body>
+</html>
+    
